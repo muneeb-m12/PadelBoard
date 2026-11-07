@@ -3,7 +3,8 @@ export type BookingStatus = "booked" | "checked_in" | "completed" | "cancelled" 
 export interface Court {
   id: string;
   name: string;
-  lightsOn: boolean;
+  /** Only meaningful when manualOverride is true: the light state staff forced. */
+  manualLightsOn: boolean;
   manualOverride: boolean;
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Booking, Court, LightLogEntry, ClubSettings } from "@/lib/types";
 import { canCheckIn, formatHour, hasOverlap, lightsOffTime } from "@/lib/rules";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
@@ -11,9 +11,9 @@ function seed(): { courts: Court[]; bookings: Booking[]; log: LightLogEntry[] } 
   const now = new Date();
   const h = Math.min(21, Math.max(16, now.getHours()));
   const courts: Court[] = [
-    { id: "c1", name: "Court 1", lightsOn: true, manualOverride: false },
-    { id: "c2", name: "Court 2", lightsOn: false, manualOverride: false },
-    { id: "c3", name: "Court 3", lightsOn: true, manualOverride: false },
+    { id: "c1", name: "Court 1", manualLightsOn: false, manualOverride: false },
+    { id: "c2", name: "Court 2", manualLightsOn: false, manualOverride: false },
+    { id: "c3", name: "Court 3", manualLightsOn: false, manualOverride: false },
   ];
   const checkedIn1 = new Date(now.getTime() - 19 * 60_000);
   const checkedIn3 = new Date(now.getTime() - 47 * 60_000);
@@ -54,34 +54,35 @@ export default function Dashboard() {
     return () => clearInterval(t);
   }, []);
 
-  // Doc §3 step 6: automatic switch-off (client demo version; production uses /api/cron/switch-off)
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- demo timer: this effect is the every-second clock check
-    setBookings((prev) => {
-      let changed = false;
-      const next = prev.map((b) => {
-        if (b.status === "checked_in" && b.lightsOffAt && b.lightsOffAt <= now) {
-          const court = courts.find((c) => c.id === b.courtId);
-          if (court?.manualOverride) return b;
-          changed = true;
-          return { ...b, status: "completed" as const };
-        }
-        return b;
-      });
-      if (changed) {
-        const finished = prev.filter((b) => b.status === "checked_in" && b.lightsOffAt && b.lightsOffAt <= now);
-        for (const b of finished) {
-          const courtName = courts.find((c) => c.id === b.courtId)?.name ?? "Court";
-          setCourts((cs) => cs.map((c) => (c.id === b.courtId ? { ...c, lightsOn: false } : c)));
-          setLog((l) => [{ id: uid(), courtName, action: "off", reason: "automatic", at: new Date() }, ...l]);
-        }
-      }
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [now]);
+  // A session is live only until its lights-off time. Light state is DERIVED
+  // from this (see lightsOnFor below), never stored separately — a stored copy
+  // is what previously let a court keep showing "Lights ON" after time was up.
+  const liveSessionForCourt = (courtId: string, at: Date) =>
+    bookings.find((b) => b.courtId === courtId && b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > at);
 
-  const activeForCourt = (courtId: string) => bookings.find((b) => b.courtId === courtId && b.status === "checked_in");
+  /** Effective light state: manual override wins; otherwise on only while a session is live. */
+  const lightsOnFor = (court: Court, at: Date) =>
+    court.manualOverride ? court.manualLightsOn : liveSessionForCourt(court.id, at) !== undefined;
+
+  // Doc §3 step 6: when time is up, complete the booking and log the automatic
+  // switch-off (unless staff forced the lights on — then they stay on, Doc §5).
+  // Runs outside any state updater, once per booking (guarded by a ref).
+  const completedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const due = bookings.filter(
+      (b) => b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt <= now && !completedRef.current.has(b.id)
+    );
+    if (due.length === 0) return;
+    due.forEach((b) => completedRef.current.add(b.id));
+    setBookings((prev) => prev.map((b) => (due.some((d) => d.id === b.id) ? { ...b, status: "completed" as const } : b)));
+    const offEntries: LightLogEntry[] = due
+      .filter((b) => !courts.find((c) => c.id === b.courtId)?.manualOverride)
+      .map((b) => ({ id: uid(), courtName: courts.find((c) => c.id === b.courtId)?.name ?? "Court", action: "off" as const, reason: "automatic" as const, at: new Date() }));
+    if (offEntries.length > 0) setLog((l) => [...offEntries, ...l]);
+    setNotice(`Time up — ${due.map((b) => b.customerName).join(", ")}: session completed, lights off automatically.`);
+  }, [now, bookings, courts]);
+
+  const activeForCourt = (courtId: string) => liveSessionForCourt(courtId, now);
 
   function addLog(courtName: string, action: "on" | "off", reason: LightLogEntry["reason"]) {
     setLog((l) => [{ id: uid(), courtName, action, reason, at: new Date() }, ...l]);
@@ -103,7 +104,8 @@ export default function Dashboard() {
     const at = new Date();
     const off = lightsOffTime(at, b.durationHours);
     setBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, status: "checked_in", checkedInAt: at, lightsOffAt: off } : x)));
-    setCourts((cs) => cs.map((c) => (c.id === b.courtId ? { ...c, lightsOn: true } : c)));
+    // Back to automatic mode for this court — the live session turns the lights on.
+    setCourts((cs) => cs.map((c) => (c.id === b.courtId ? { ...c, manualOverride: false, manualLightsOn: false } : c)));
     addLog(courts.find((c) => c.id === b.courtId)?.name ?? "Court", "on", "check_in");
     setNotice(`${b.customerName} checked in. Lights off at ${off.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
   }
@@ -128,21 +130,27 @@ export default function Dashboard() {
   }
 
   function handleToggleLights(court: Court) {
-    const nextOn = !court.lightsOn;
-    setCourts((cs) => cs.map((c) => (c.id === court.id ? { ...c, lightsOn: nextOn, manualOverride: nextOn } : c)));
+    const nextOn = !lightsOnFor(court, new Date());
+    setCourts((cs) => cs.map((c) => (c.id === court.id ? { ...c, manualOverride: true, manualLightsOn: nextOn } : c)));
     addLog(court.name, nextOn ? "on" : "off", "manual");
     setNotice(`${court.name} lights ${nextOn ? "ON (manual override — auto switch-off will not override this)" : "OFF"} manually.`);
   }
 
+  function handleBackToAuto(court: Court) {
+    setCourts((cs) => cs.map((c) => (c.id === court.id ? { ...c, manualOverride: false, manualLightsOn: false } : c)));
+    setNotice(`${court.name} is back on automatic control — lights follow bookings.`);
+  }
+
   function handleReset() {
     const fresh = seed();
+    completedRef.current.clear();
     setCourts(fresh.courts); setBookings(fresh.bookings); setLog(fresh.log);
     setNotice("Demo data reset.");
   }
 
   const hours = Array.from({ length: settings.closingHour - settings.openingHour + 1 }, (_, i) => settings.openingHour + i);
   const lightHoursToday = log.filter((l) => l.action === "on").length; // placeholder demo metric; production sums log pairs
-  const runningHours = bookings.filter((b) => b.status === "checked_in").length;
+  const runningHours = bookings.filter((b) => b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > now).length;
   const bookedToday = bookings.filter((b) => b.status !== "cancelled").length;
   const utilization = Math.round((bookedToday / (courts.length * hours.length)) * 100);
   const estCost = Math.max(0, runningHours + lightHoursToday - 1) * settings.lightingPowerKw * settings.electricityPricePerUnit;
@@ -186,17 +194,19 @@ export default function Dashboard() {
       <section className="mt-6 grid gap-4 sm:grid-cols-3">
         {courts.map((court) => {
           const active = activeForCourt(court.id);
+          const lightsOn = lightsOnFor(court, now);
           return (
-            <div key={court.id} className={`rounded-2xl border p-4 ${court.lightsOn ? "border-amber-400 bg-amber-50 dark:bg-amber-950/40" : ""}`}>
+            <div key={court.id} className={`rounded-2xl border p-4 ${lightsOn ? "border-amber-400 bg-amber-50 dark:bg-amber-950/40" : ""}`}>
               <div className="flex items-center justify-between">
                 <h2 className="font-semibold">{court.name}</h2>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${court.lightsOn ? "bg-amber-400 text-black" : "bg-neutral-200 dark:bg-neutral-800"}`}>{court.lightsOn ? "Lights ON" : "Lights off"}</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${lightsOn ? "bg-amber-400 text-black" : "bg-neutral-200 dark:bg-neutral-800"}`}>{lightsOn ? "Lights ON" : "Lights off"}</span>
               </div>
               {active ? (
                 <p className="mt-3 text-sm">{active.customerName} — lights off in <span className="font-mono font-bold">{countdown(active.lightsOffAt, now)}</span><br /><span className="opacity-70">Off at {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span></p>
-              ) : <p className="mt-3 text-sm opacity-70">No active session{court.manualOverride && court.lightsOn ? " · Manual override active" : ""}</p>}
+              ) : <p className="mt-3 text-sm opacity-70">No active session{court.manualOverride ? " · Manual override active" : ""}</p>}
               <div className="mt-4 flex flex-wrap gap-2">
-                <button onClick={() => handleToggleLights(court)} className="rounded-lg border px-3 py-1.5 text-sm">{court.lightsOn ? "Turn off manually" : "Turn on manually"}</button>
+                <button onClick={() => handleToggleLights(court)} className="rounded-lg border px-3 py-1.5 text-sm">{lightsOn ? "Turn off manually" : "Turn on manually"}</button>
+                {court.manualOverride && <button onClick={() => handleBackToAuto(court)} className="rounded-lg border px-3 py-1.5 text-sm">Back to auto</button>}
                 {active && <><button onClick={() => handleExtend(active, 0.5)} className="rounded-lg border px-3 py-1.5 text-sm">Extend 30m</button><button onClick={() => handleExtend(active, 1)} className="rounded-lg border px-3 py-1.5 text-sm">Extend 1h</button></>}
               </div>
             </div>
