@@ -5,6 +5,11 @@ Next.js (App Router, TypeScript, Tailwind) + Supabase — following Product Docu
 
 ## Run it (demo mode, no database needed)
 
+**Prerequisite: Node.js 22.12 or newer** (check with `node -v`). Older Node versions fail with
+`require() of ES Module ... magic-string ... not supported` when Tailwind/Turbopack loads,
+because loading an ES module with `require()` is only supported from Node 20.19 / 22.12 onwards.
+If you upgrade Node, delete `node_modules` and `.next` and run `npm install` again.
+
 ```bash
 npm install
 npm run dev
