@@ -43,6 +43,27 @@ body {
   font-family: var(--font-archivo), system-ui, sans-serif;
 }
 
+/* Tailwind v4's preflight leaves buttons with the default arrow cursor.
+   Everything clickable gets a pointer; disabled controls get not-allowed. */
+button:not(:disabled),
+a,
+[role="button"]:not([aria-disabled="true"]),
+label[for],
+select:not(:disabled),
+input[type="date"]:not(:disabled),
+input[type="time"]:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+input[type="submit"]:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled,
+select:disabled,
+input:disabled {
+  cursor: not-allowed;
+}
+
 /* A lit court glows. */
 .lit-glow {
   box-shadow: 0 0 0 2px var(--amber), 0 12px 44px -10px rgba(255, 194, 31, 0.55);
