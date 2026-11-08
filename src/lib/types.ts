@@ -13,10 +13,10 @@ export interface Booking {
   courtId: string;
   customerName: string;
   customerPhone: string;
-  /** hour of day, 24h, e.g. 19 = 7:00 PM */
-  startHour: number;
-  /** 1, 2 or 3 at booking time; extensions can add 0.5 / 1 */
-  durationHours: number;
+  /** minutes since midnight, e.g. 19:30 = 1170 — any start time is allowed */
+  startMinutes: number;
+  /** any length from 1 minute up; extensions add minutes too */
+  durationMinutes: number;
   status: BookingStatus;
   checkedInAt: Date | null;
   lightsOffAt: Date | null;

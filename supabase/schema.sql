@@ -34,7 +34,7 @@ create table if not exists public.bookings (
   customer_phone text not null,
   booking_date date not null,
   start_time time not null,
-  duration_hours numeric not null check (duration_hours in (1, 2, 3)),
+  duration_minutes int not null check (duration_minutes > 0),
   status text not null default 'booked'
     check (status in ('booked','checked_in','completed','cancelled','no_show')),
   checked_in_at timestamptz,
@@ -46,7 +46,7 @@ create table if not exists public.bookings (
     court_id with =,
     tsrange(
       (booking_date + start_time)::timestamp,
-      (booking_date + start_time)::timestamp + (duration_hours || ' hours')::interval
+      (booking_date + start_time)::timestamp + (duration_minutes || ' minutes')::interval
     ) with &&
   ) where (status in ('booked','checked_in'))
 );

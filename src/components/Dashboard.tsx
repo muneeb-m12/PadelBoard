@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Booking, Court, LightLogEntry, ClubSettings } from "@/lib/types";
-import { canCheckIn, formatHour, hasOverlap, lightsOffTime } from "@/lib/rules";
+import { canCheckIn, formatDuration, formatHour, formatMinutesOfDay, hasOverlap, lightsOffTime, minutesToTimeString, timeStringToMinutes } from "@/lib/rules";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -18,9 +18,9 @@ function seed(): { courts: Court[]; bookings: Booking[]; log: LightLogEntry[] } 
   const checkedIn1 = new Date(now.getTime() - 19 * 60_000);
   const checkedIn3 = new Date(now.getTime() - 47 * 60_000);
   const bookings: Booking[] = [
-    { id: uid(), courtId: "c1", customerName: "Ali", customerPhone: "0300 0000001", startHour: h, durationHours: 1, status: "checked_in", checkedInAt: checkedIn1, lightsOffAt: lightsOffTime(checkedIn1, 1) },
-    { id: uid(), courtId: "c3", customerName: "Sara", customerPhone: "0300 0000002", startHour: h, durationHours: 1, status: "checked_in", checkedInAt: checkedIn3, lightsOffAt: lightsOffTime(checkedIn3, 1) },
-    { id: uid(), courtId: "c2", customerName: "Hamza", customerPhone: "0300 0000003", startHour: h + 1 <= 23 ? h + 1 : h, durationHours: 1, status: "booked", checkedInAt: null, lightsOffAt: null },
+    { id: uid(), courtId: "c1", customerName: "Ali", customerPhone: "0300 0000001", startMinutes: h * 60, durationMinutes: 60, status: "checked_in", checkedInAt: checkedIn1, lightsOffAt: lightsOffTime(checkedIn1, 60) },
+    { id: uid(), courtId: "c3", customerName: "Sara", customerPhone: "0300 0000002", startMinutes: h * 60, durationMinutes: 60, status: "checked_in", checkedInAt: checkedIn3, lightsOffAt: lightsOffTime(checkedIn3, 60) },
+    { id: uid(), courtId: "c2", customerName: "Hamza", customerPhone: "0300 0000003", startMinutes: (h + 1 <= 23 ? h + 1 : h) * 60, durationMinutes: 60, status: "booked", checkedInAt: null, lightsOffAt: null },
   ];
   const log: LightLogEntry[] = [
     { id: uid(), courtName: "Court 1", action: "on", reason: "check_in", at: checkedIn1 },
@@ -45,7 +45,7 @@ export default function Dashboard() {
   const [settings, setSettings] = useState<ClubSettings>({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23 });
   const [now, setNow] = useState(() => new Date());
   const [notice, setNotice] = useState("");
-  const [form, setForm] = useState({ name: "", phone: "", courtId: "c1", startHour: 19, durationHours: 1 });
+  const [form, setForm] = useState({ name: "", phone: "", courtId: "c1", startTime: "19:00", durationMinutes: 60 });
   const [showForm, setShowForm] = useState(false);
 
   // tick every second for countdowns
@@ -91,10 +91,13 @@ export default function Dashboard() {
   function handleAddBooking(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim() || !form.phone.trim()) { setNotice("Enter the customer's name and phone."); return; }
-    const clash = hasOverlap(bookings, form.courtId, form.startHour, form.durationHours);
-    if (clash) { setNotice(`That slot clashes with ${clash.customerName} (${formatHour(clash.startHour)}–${formatHour(clash.startHour + clash.durationHours)}) on the same court.`); return; }
-    setBookings((b) => [...b, { id: uid(), courtId: form.courtId, customerName: form.name.trim(), customerPhone: form.phone.trim(), startHour: form.startHour, durationHours: form.durationHours, status: "booked", checkedInAt: null, lightsOffAt: null }]);
-    setNotice(`Booking created for ${form.name} — ${formatHour(form.startHour)}, ${form.durationHours}h.`);
+    const startMinutes = timeStringToMinutes(form.startTime);
+    const durationMinutes = Math.floor(form.durationMinutes);
+    if (!durationMinutes || durationMinutes < 1) { setNotice("Duration must be at least 1 minute."); return; }
+    const clash = hasOverlap(bookings, form.courtId, startMinutes, durationMinutes);
+    if (clash) { setNotice(`That time clashes with ${clash.customerName} (${formatMinutesOfDay(clash.startMinutes)}–${formatMinutesOfDay(clash.startMinutes + clash.durationMinutes)}) on the same court.`); return; }
+    setBookings((b) => [...b, { id: uid(), courtId: form.courtId, customerName: form.name.trim(), customerPhone: form.phone.trim(), startMinutes, durationMinutes, status: "booked", checkedInAt: null, lightsOffAt: null }]);
+    setNotice(`Booking created for ${form.name} — ${formatMinutesOfDay(startMinutes)}–${formatMinutesOfDay(startMinutes + durationMinutes)} (${formatDuration(durationMinutes)}).`);
     setShowForm(false); setForm((f) => ({ ...f, name: "", phone: "" }));
   }
 
@@ -102,7 +105,7 @@ export default function Dashboard() {
     const check = canCheckIn(b, new Date());
     if (!check.ok) { setNotice(check.message); return; }
     const at = new Date();
-    const off = lightsOffTime(at, b.durationHours);
+    const off = lightsOffTime(at, b.durationMinutes);
     setBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, status: "checked_in", checkedInAt: at, lightsOffAt: off } : x)));
     // Back to automatic mode for this court — the live session turns the lights on.
     setCourts((cs) => cs.map((c) => (c.id === b.courtId ? { ...c, manualOverride: false, manualLightsOn: false } : c)));
@@ -110,13 +113,13 @@ export default function Dashboard() {
     setNotice(`${b.customerName} checked in. Lights off at ${off.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
   }
 
-  function handleExtend(b: Booking, extraHours: number) {
-    const clash = hasOverlap(bookings, b.courtId, b.startHour, b.durationHours + extraHours, b.id);
+  function handleExtend(b: Booking, extraMinutes: number) {
+    const clash = hasOverlap(bookings, b.courtId, b.startMinutes, b.durationMinutes + extraMinutes, b.id);
     if (clash) { setNotice(`Can't extend — the next slot is booked by ${clash.customerName}.`); return; }
     if (!b.lightsOffAt) return;
-    const off = new Date(b.lightsOffAt.getTime() + extraHours * 3_600_000);
-    setBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, durationHours: x.durationHours + extraHours, lightsOffAt: off } : x)));
-    setNotice(`Extended. New lights-off: ${off.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
+    const off = new Date(b.lightsOffAt.getTime() + extraMinutes * 60_000);
+    setBookings((prev) => prev.map((x) => (x.id === b.id ? { ...x, durationMinutes: x.durationMinutes + extraMinutes, lightsOffAt: off } : x)));
+    setNotice(`Extended by ${formatDuration(extraMinutes)}. New lights-off: ${off.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
   }
 
   function handleReleaseNoShow(b: Booking) {
@@ -178,14 +181,17 @@ export default function Dashboard() {
           <select value={form.courtId} onChange={(e) => setForm({ ...form, courtId: e.target.value })} className="rounded border px-3 py-2 bg-transparent">
             {courts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <select value={form.startHour} onChange={(e) => setForm({ ...form, startHour: Number(e.target.value) })} className="rounded border px-3 py-2 bg-transparent">
-            {hours.map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
-          </select>
-          <div className="flex gap-2">
-            <select value={form.durationHours} onChange={(e) => setForm({ ...form, durationHours: Number(e.target.value) })} className="flex-1 rounded border px-3 py-2 bg-transparent">
-              <option value={1}>1 hour</option><option value={2}>2 hours</option><option value={3}>3 hours</option>
-            </select>
-            <button type="submit" className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white dark:bg-white dark:text-black">Save</button>
+          <label className="text-xs opacity-70">Start time
+            <input type="time" required value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} className="mt-0.5 w-full rounded border px-3 py-2 text-sm bg-transparent" />
+          </label>
+          <div>
+            <label className="text-xs opacity-70">Duration (minutes)
+              <input type="number" required min={1} step={1} value={form.durationMinutes} onChange={(e) => setForm({ ...form, durationMinutes: Number(e.target.value) })} className="mt-0.5 w-full rounded border px-3 py-2 text-sm bg-transparent" />
+            </label>
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              {[30, 60, 90, 120].map((m) => <button type="button" key={m} onClick={() => setForm({ ...form, durationMinutes: m })} className="rounded border px-2 py-0.5 text-xs">{formatDuration(m)}</button>)}
+              <button type="submit" className="ml-auto rounded-lg bg-black px-4 py-1.5 text-sm font-semibold text-white dark:bg-white dark:text-black">Save</button>
+            </div>
           </div>
         </form>
       )}
@@ -207,7 +213,7 @@ export default function Dashboard() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <button onClick={() => handleToggleLights(court)} className="rounded-lg border px-3 py-1.5 text-sm">{lightsOn ? "Turn off manually" : "Turn on manually"}</button>
                 {court.manualOverride && <button onClick={() => handleBackToAuto(court)} className="rounded-lg border px-3 py-1.5 text-sm">Back to auto</button>}
-                {active && <><button onClick={() => handleExtend(active, 0.5)} className="rounded-lg border px-3 py-1.5 text-sm">Extend 30m</button><button onClick={() => handleExtend(active, 1)} className="rounded-lg border px-3 py-1.5 text-sm">Extend 1h</button></>}
+                {active && <><button onClick={() => handleExtend(active, 30)} className="rounded-lg border px-3 py-1.5 text-sm">Extend 30m</button><button onClick={() => handleExtend(active, 60)} className="rounded-lg border px-3 py-1.5 text-sm">Extend 1h</button></>}
               </div>
             </div>
           );
@@ -224,9 +230,9 @@ export default function Dashboard() {
               <tr key={h}>
                 <td className="border p-2 text-left font-medium">{formatHour(h)}</td>
                 {courts.map((c) => {
-                  const occ = bookings.find((b) => b.courtId === c.id && (b.status === "booked" || b.status === "checked_in") && h >= b.startHour && h < b.startHour + b.durationHours);
+                  const occ = bookings.find((b) => b.courtId === c.id && (b.status === "booked" || b.status === "checked_in") && b.startMinutes < (h + 1) * 60 && h * 60 < b.startMinutes + b.durationMinutes);
                   return (
-                    <td key={c.id} onClick={() => { if (!occ) { setForm((f) => ({ ...f, courtId: c.id, startHour: h })); setShowForm(true); } }} className={`border p-2 ${occ ? "bg-neutral-200 font-medium dark:bg-neutral-800" : "cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/40"}`}>
+                    <td key={c.id} onClick={() => { if (!occ) { setForm((f) => ({ ...f, courtId: c.id, startTime: minutesToTimeString(h * 60) })); setShowForm(true); } }} className={`border p-2 ${occ ? "bg-neutral-200 font-medium dark:bg-neutral-800" : "cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-900/40"}`}>
                       {occ ? occ.customerName : "Free"}
                     </td>
                   );
@@ -243,9 +249,10 @@ export default function Dashboard() {
         <h2 className="mb-2 font-semibold">Today&apos;s bookings</h2>
         <div className="divide-y rounded-xl border">
           {bookings.length === 0 && <p className="p-4 text-sm opacity-70">No bookings yet.</p>}
-          {[...bookings].sort((a, b) => a.startHour - b.startHour).map((b) => (
+          {[...bookings].sort((a, b) => a.startMinutes - b.startMinutes).map((b) => (
             <div key={b.id} className="flex flex-wrap items-center gap-3 p-3 text-sm">
-              <span className="font-mono">{formatHour(b.startHour)}–{formatHour(b.startHour + b.durationHours)}</span>
+              <span className="font-mono">{formatMinutesOfDay(b.startMinutes)}–{formatMinutesOfDay(b.startMinutes + b.durationMinutes)}</span>
+              <span className="opacity-60">({formatDuration(b.durationMinutes)})</span>
               <span>{courts.find((c) => c.id === b.courtId)?.name}</span>
               <span className="font-medium">{b.customerName}</span>
               <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs capitalize dark:bg-neutral-800">{b.status.replace("_", " ")}</span>
