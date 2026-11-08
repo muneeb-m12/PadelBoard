@@ -2,27 +2,28 @@
 
 /* PadelBoard design system — ported from the hosted demo (theme.css):
    Archivo, green paper background, amber for lit courts. */
-:root {
+/* Dark is the default theme (padel is a night business); the header toggle
+   switches to light and the choice is remembered. */
+:root,
+:root[data-theme="dark"] {
+  --bg: #0c120d;
+  --surface: #141b15;
+  --surface2: #1a241b;
+  --text: #e9f1e9;
+  --dim: #93a89a;
+  --border: #2a3a2d;
+  --amber: #ffc21f;
+  --amber-ink: #241a00;
+  --radius: 10px;
+}
+
+:root[data-theme="light"] {
   --bg: #e9efe9;
   --surface: #f7faf6;
   --surface2: #eef4ee;
   --text: #101a14;
   --dim: #5c6f63;
   --border: #cfdccf;
-  --amber: #ffc21f;
-  --amber-ink: #241a00;
-  --radius: 10px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0c120d;
-    --surface: #141b15;
-    --surface2: #1a241b;
-    --text: #e9f1e9;
-    --dim: #93a89a;
-    --border: #2a3a2d;
-  }
 }
 
 @theme inline {

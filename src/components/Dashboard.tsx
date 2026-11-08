@@ -87,6 +87,7 @@ const btnCls = "rounded-[10px] border border-pb-border bg-pb-surface px-3 py-1.5
 const chipCls = "rounded-full border border-pb-border bg-pb-surface2 px-2.5 py-0.5 text-xs font-semibold";
 
 export default function Dashboard() {
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [days, setDays] = useState<Record<string, DayData>>(() => seedAll());
   const [settings, setSettings] = useState<ClubSettings>({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23 });
   const [now, setNow] = useState(() => new Date());
@@ -125,6 +126,17 @@ export default function Dashboard() {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // Theme: dark by default; restore the saved choice, then keep <html> in sync.
+  useEffect(() => {
+    const saved = window.localStorage.getItem("pb-theme");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore of the saved theme on mount
+    if (saved === "light" || saved === "dark") setTheme(saved);
+  }, []);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("pb-theme", theme);
+  }, [theme]);
 
   // A session is live only until its lights-off time; light state is DERIVED
   // from this, never stored — a stored copy once let courts show ON after time-up.
@@ -311,6 +323,7 @@ export default function Dashboard() {
           <p className="text-sm text-pb-dim">Demo Padel Club · {isSupabaseConfigured() ? "Supabase connected" : "Demo mode (no Supabase keys yet — see README)"}</p>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))} className={btnCls} title="Switch theme">{theme === "dark" ? "☀ Light" : "☾ Dark"}</button>
           <button onClick={() => setShowSettings((s) => !s)} className={btnCls}>Club settings</button>
           <button onClick={() => openForm()} className="rounded-[10px] bg-pb-amber px-4 py-2 text-sm font-extrabold text-pb-amber-ink">+ Add booking</button>
         </div>
@@ -334,7 +347,7 @@ export default function Dashboard() {
       {alerts.length > 0 && (
         <div className="mt-4 space-y-2">
           {alerts.map((a, i) => (
-            <div key={i} className="flex items-start gap-2 rounded-[10px] border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-900 dark:border-red-900 dark:bg-red-950/50 dark:text-red-100">
+            <div key={i} className="flex items-start gap-2 rounded-[10px] border border-red-500/50 bg-red-500/10 px-4 py-2 text-sm font-medium">
               <span aria-hidden>⚠</span><span>{a}</span>
             </div>
           ))}
@@ -427,7 +440,7 @@ export default function Dashboard() {
                 <span className="text-pb-dim">{b.customerPhone}</span>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${chip.cls}`}>{chip.text}</span>
                 {timeUp ? <span className="text-xs text-pb-dim">Time&apos;s up — lights went off at {b.lightsOffAt!.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span> : null}
-                {noShowWaiting && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-800 dark:bg-red-950 dark:text-red-200">No-show waiting</span>}
+                {noShowWaiting && <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-bold text-red-500">No-show waiting</span>}
                 <span className="ml-auto flex flex-wrap items-center gap-2">
                   {b.status === "booked" && (
                     <>
