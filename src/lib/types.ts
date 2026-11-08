@@ -13,6 +13,8 @@ export interface Booking {
   courtId: string;
   customerName: string;
   customerPhone: string;
+  /** local calendar date, "YYYY-MM-DD" */
+  dateISO: string;
   /** minutes since midnight, e.g. 19:30 = 1170 — any start time is allowed */
   startMinutes: number;
   /** any length from 1 minute up; extensions add minutes too */

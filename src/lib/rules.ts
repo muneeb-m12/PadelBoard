@@ -13,10 +13,31 @@ export function hasOverlap(bookings: Booking[], courtId: string, startMinutes: n
   return null;
 }
 
+/** Local "YYYY-MM-DD" for a Date. */
+export function isoFromDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function isoToDate(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+export function isoAddDays(iso: string, days: number): string {
+  const d = isoToDate(iso); d.setDate(d.getDate() + days);
+  return isoFromDate(d);
+}
+
+/** The moment a booking starts, as a Date. */
+export function bookingStart(booking: Booking): Date {
+  const start = isoToDate(booking.dateISO); start.setMinutes(booking.startMinutes);
+  return start;
+}
+
 /** Doc §3: check-in opens 15 minutes before the booked start, closes at booked end. */
 export function canCheckIn(booking: Booking, now: Date, earlyMinutes = 15): { ok: boolean; message: string } {
   if (booking.status !== "booked") return { ok: false, message: "This booking is not awaiting check-in." };
-  const start = new Date(now); start.setHours(0, 0, 0, 0); start.setMinutes(booking.startMinutes);
+  const start = bookingStart(booking);
   const end = new Date(start.getTime() + booking.durationMinutes * 60_000);
   const opens = new Date(start.getTime() - earlyMinutes * 60_000);
   if (now < opens) return { ok: false, message: `Check-in opens at ${opens.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} (15 min before start).` };

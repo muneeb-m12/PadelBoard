@@ -1,26 +1,58 @@
 @import "tailwindcss";
 
+/* PadelBoard design system — ported from the hosted demo (theme.css):
+   Archivo, green paper background, amber for lit courts. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --bg: #e9efe9;
+  --surface: #f7faf6;
+  --surface2: #eef4ee;
+  --text: #101a14;
+  --dim: #5c6f63;
+  --border: #cfdccf;
+  --amber: #ffc21f;
+  --amber-ink: #241a00;
+  --radius: 10px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #0c120d;
+    --surface: #141b15;
+    --surface2: #1a241b;
+    --text: #e9f1e9;
+    --dim: #93a89a;
+    --border: #2a3a2d;
   }
 }
 
+@theme inline {
+  --color-pb-bg: var(--bg);
+  --color-pb-surface: var(--surface);
+  --color-pb-surface2: var(--surface2);
+  --color-pb-text: var(--text);
+  --color-pb-dim: var(--dim);
+  --color-pb-border: var(--border);
+  --color-pb-amber: var(--amber);
+  --color-pb-amber-ink: var(--amber-ink);
+  --font-sans: var(--font-archivo);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-archivo), system-ui, sans-serif;
+}
+
+/* A lit court glows. */
+.lit-glow {
+  box-shadow: 0 0 0 2px var(--amber), 0 12px 44px -10px rgba(255, 194, 31, 0.55);
+}
+
+.pulse-dot {
+  animation: pb-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pb-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
 }
