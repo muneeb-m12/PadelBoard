@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
-import type { Booking, Court, LightLogEntry, ClubSettings } from "@/lib/types";
+import type { Booking, BookingShare, Court, LightLogEntry, ClubSettings, PaymentMethod } from "@/lib/types";
 import {
   bookingStart, canCheckIn, formatDuration, formatHour, formatMinutesOfDay, hasOverlap,
   isoAddDays, isoFromDate, isoToDate, lightsOffTime, minutesToTimeString, timeStringToMinutes,
@@ -10,6 +10,39 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const DURATION_CHIPS = [1, 15, 30, 45, 60, 90, 120, 180];
+const DEFAULT_RATE_PER_HOUR = 4800;
+const fmtRs = (n: number) => `Rs ${Math.round(n).toLocaleString()}`;
+
+/** Split a total equally; the rupee remainder goes +1 to the first shares so shares always sum to the total. */
+function equalShares(total: number, players: { name: string; phone: string }[], paidCount = 0): BookingShare[] {
+  const n = Math.max(1, players.length);
+  const base = Math.floor(total / n);
+  const rem = Math.round(total - base * n);
+  return players.map((p, i) => ({
+    id: uid(), name: p.name, phone: p.phone,
+    amountDue: base + (i < rem ? 1 : 0),
+    paid: i < paidCount, method: i < paidCount ? ("jazzcash" as PaymentMethod) : null,
+  }));
+}
+
+function paymentSummary(b: Booking) {
+  const collected = b.shares.reduce((s, sh) => s + (sh.paid ? sh.amountDue : 0), 0);
+  return {
+    collected,
+    outstanding: Math.max(0, b.totalAmount - collected),
+    paidCount: b.shares.filter((s) => s.paid).length,
+    shareCount: b.shares.length,
+    fullyPaid: b.totalAmount > 0 && collected >= b.totalAmount,
+  };
+}
+
+/** wa.me link with a pre-filled payment reminder for one player's share. */
+function whatsappReminderLink(b: Booking, sh: BookingShare, courtName: string): string {
+  let digits = sh.phone.replace(/\D/g, "");
+  if (digits.startsWith("0")) digits = "92" + digits.slice(1);
+  const text = `Salam ${sh.name}, your share for ${courtName} (${formatMinutesOfDay(b.startMinutes)}, ${formatDuration(b.durationMinutes)}) is ${fmtRs(sh.amountDue)}. Please pay the club via JazzCash/Easypaisa or cash at the counter before the game. — PadelBoard`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+}
 
 interface DayData { courts: Court[]; bookings: Booking[]; log: LightLogEntry[] }
 
@@ -23,9 +56,9 @@ function seedDay(offset: number): { bookings: Booking[]; log: LightLogEntry[] } 
     const checkedIn3 = new Date(now.getTime() - 47 * 60_000);
     return {
       bookings: [
-        { id: uid(), courtId: "c1", customerName: "Ali Raza", customerPhone: "0300 1112233", dateISO, startMinutes: h * 60, durationMinutes: 60, status: "checked_in", checkedInAt: checkedIn1, lightsOffAt: lightsOffTime(checkedIn1, 60) },
-        { id: uid(), courtId: "c3", customerName: "Sara Khan", customerPhone: "0321 4455667", dateISO, startMinutes: h * 60, durationMinutes: 60, status: "checked_in", checkedInAt: checkedIn3, lightsOffAt: lightsOffTime(checkedIn3, 60) },
-        { id: uid(), courtId: "c2", customerName: "Hamza Tariq", customerPhone: "0333 9988776", dateISO, startMinutes: (h + 1 <= 23 ? h + 1 : h) * 60, durationMinutes: 60, status: "booked", checkedInAt: null, lightsOffAt: null },
+        { id: uid(), courtId: "c1", customerName: "Ali Raza", customerPhone: "0300 1112233", dateISO, startMinutes: h * 60, durationMinutes: 60, status: "checked_in", checkedInAt: checkedIn1, lightsOffAt: lightsOffTime(checkedIn1, 60), totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Ali Raza", phone: "0300 1112233" }, { name: "Daniyal Sheikh", phone: "0321 5551234" }, { name: "Omar Farooq", phone: "0333 5559876" }, { name: "Zain Ul Abideen", phone: "0301 5553456" }], 3) },
+        { id: uid(), courtId: "c3", customerName: "Sara Khan", customerPhone: "0321 4455667", dateISO, startMinutes: h * 60, durationMinutes: 60, status: "checked_in", checkedInAt: checkedIn3, lightsOffAt: lightsOffTime(checkedIn3, 60), totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Sara Khan", phone: "0321 4455667" }, { name: "Mahnoor Fatima", phone: "0302 5557788" }, { name: "Hira Shahid", phone: "0345 5552211" }, { name: "Areeba Khan", phone: "0311 5556644" }], 2) },
+        { id: uid(), courtId: "c2", customerName: "Hamza Tariq", customerPhone: "0333 9988776", dateISO, startMinutes: (h + 1 <= 23 ? h + 1 : h) * 60, durationMinutes: 60, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Hamza Tariq", phone: "0333 9988776" }, { name: "Ahmed Raza", phone: "0300 5554321" }, { name: "Bilal Hussain", phone: "0322 5558765" }, { name: "Fahad Iqbal", phone: "0303 5552109" }], 1) },
       ],
       log: [
         { id: uid(), courtName: "Court 1", action: "on", reason: "check_in", at: checkedIn1 },
@@ -36,8 +69,8 @@ function seedDay(offset: number): { bookings: Booking[]; log: LightLogEntry[] } 
   if (offset === 1) {
     return {
       bookings: [
-        { id: uid(), courtId: "c1", customerName: "Usman Malik", customerPhone: "0301 2233445", dateISO, startMinutes: 19 * 60, durationMinutes: 90, status: "booked", checkedInAt: null, lightsOffAt: null },
-        { id: uid(), courtId: "c2", customerName: "Ayesha Noor", customerPhone: "0345 6677889", dateISO, startMinutes: 20 * 60 + 30, durationMinutes: 60, status: "booked", checkedInAt: null, lightsOffAt: null },
+        { id: uid(), courtId: "c1", customerName: "Usman Malik", customerPhone: "0301 2233445", dateISO, startMinutes: 19 * 60, durationMinutes: 90, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR * 1.5, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR * 1.5, [{ name: "Usman Malik", phone: "0301 2233445" }, { name: "Talha Mehmood", phone: "0312 5553344" }, { name: "Shahzaib Ali", phone: "0331 5559988" }, { name: "Waqas Ahmad", phone: "0309 5551122" }], 0) },
+        { id: uid(), courtId: "c2", customerName: "Ayesha Noor", customerPhone: "0345 6677889", dateISO, startMinutes: 20 * 60 + 30, durationMinutes: 60, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: false, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Ayesha Noor", phone: "0345 6677889" }], 0) },
       ],
       log: [],
     };
@@ -47,7 +80,7 @@ function seedDay(offset: number): { bookings: Booking[]; log: LightLogEntry[] } 
     const off = new Date(y.getTime() + 60 * 60_000);
     return {
       bookings: [
-        { id: uid(), courtId: "c1", customerName: "Bilal Ahmed", customerPhone: "0308 1122334", dateISO, startMinutes: 19 * 60, durationMinutes: 60, status: "completed", checkedInAt: y, lightsOffAt: off },
+        { id: uid(), courtId: "c1", customerName: "Bilal Ahmed", customerPhone: "0308 1122334", dateISO, startMinutes: 19 * 60, durationMinutes: 60, status: "completed", checkedInAt: y, lightsOffAt: off, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Bilal Ahmed", phone: "0308 1122334" }, { name: "Hassan Javed", phone: "0305 5556677" }, { name: "Imran Khalid", phone: "0323 5554433" }, { name: "Noman Aslam", phone: "0313 5552211" }], 4) },
       ],
       log: [
         { id: uid(), courtName: "Court 1", action: "off", reason: "automatic", at: off },
@@ -89,7 +122,7 @@ const chipCls = "rounded-full border border-pb-border bg-pb-surface2 px-2.5 py-0
 export default function Dashboard() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [days, setDays] = useState<Record<string, DayData>>(() => seedAll());
-  const [settings, setSettings] = useState<ClubSettings>({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23 });
+  const [settings, setSettings] = useState<ClubSettings>({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23, courtRatePerHour: DEFAULT_RATE_PER_HOUR });
   const [now, setNow] = useState(() => new Date());
   const todayISO = isoFromDate(now);
   const [selectedISO, setSelectedISO] = useState<string>(() => isoFromDate(new Date()));
@@ -98,7 +131,9 @@ export default function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [newCourtName, setNewCourtName] = useState("");
-  const [form, setForm] = useState({ name: "", phone: "", courtId: "c1", dateISO: todayISO, startTime: "19:00", durationMinutes: 60 });
+  const [form, setForm] = useState({ name: "", phone: "", courtId: "c1", dateISO: todayISO, startTime: "19:00", durationMinutes: 60, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, extraPlayers: [{ name: "", phone: "" }, { name: "", phone: "" }, { name: "", phone: "" }] as { name: string; phone: string }[] });
+  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  const [shareMethods, setShareMethods] = useState<Record<string, PaymentMethod>>({});
   const completedRef = useRef<Set<string>>(new Set());
   const noShowRef = useRef<Set<string>>(new Set());
 
@@ -174,6 +209,14 @@ export default function Dashboard() {
         alerts.push(`${b.customerName} on ${courts.find((c) => c.id === b.courtId)?.name} ends in ${countdown(b.lightsOffAt, now)} — offer an extension.`);
       if (b.status === "booked" && bookingStart(b) <= now && bookingStart(b).getTime() + b.durationMinutes * 60_000 > now.getTime())
         alerts.push(`${b.customerName} has not checked in (${formatMinutesOfDay(b.startMinutes)} booking) — release the slot if they're a no-show.`);
+      const pay = paymentSummary(b);
+      if ((b.status === "booked" || b.status === "checked_in") && pay.outstanding > 0) {
+        const unpaidNames = b.shares.filter((s) => !s.paid).map((s) => s.name).join(", ");
+        if (b.status === "checked_in")
+          alerts.push(`${fmtRs(pay.outstanding)} still unpaid on ${b.customerName}'s live session — ${unpaidNames} ${b.shares.filter((s) => !s.paid).length === 1 ? "has" : "have"} not paid. Collect at the counter or send a WhatsApp reminder from Payments.`);
+        else if (bookingStart(b).getTime() - now.getTime() <= 3 * 60 * 60_000 && bookingStart(b).getTime() + b.durationMinutes * 60_000 > now.getTime())
+          alerts.push(`${fmtRs(pay.outstanding)} unpaid for ${b.customerName}'s booking at ${formatMinutesOfDay(b.startMinutes)} — unpaid: ${unpaidNames}. Send reminders from Payments.`);
+      }
     }
     for (const c of courts)
       if (lightsOnFor(c, now) && !activeForCourt(c.id) && !c.manualOverride)
@@ -199,9 +242,17 @@ export default function Dashboard() {
     if (!durationMinutes || durationMinutes < 1 || durationMinutes > 1440) { setNotice("Duration must be between 1 minute and 24 hours."); return; }
     const clash = hasOverlap(target.bookings, form.courtId, startMinutes, durationMinutes);
     if (clash) { setNotice(`That time clashes with ${clash.customerName} (${formatMinutesOfDay(clash.startMinutes)}–${formatMinutesOfDay(clash.startMinutes + clash.durationMinutes)}) on the same court.`); return; }
-    patchBookings(form.dateISO, (b) => [...b, { id: uid(), courtId: form.courtId, customerName: form.name.trim(), customerPhone: form.phone.trim(), dateISO: form.dateISO, startMinutes, durationMinutes, status: "booked", checkedInAt: null, lightsOffAt: null }]);
-    setNotice(`Booking created for ${form.name} — ${formatMinutesOfDay(startMinutes)}–${formatMinutesOfDay(startMinutes + durationMinutes)} (${formatDuration(durationMinutes)}).`);
-    setShowForm(false); setForm((f) => ({ ...f, name: "", phone: "" }));
+    const totalAmount = Math.round(form.totalAmount);
+    if (!totalAmount || totalAmount < 0) { setNotice("Enter the court fee for this booking."); return; }
+    const extras = form.extraPlayers.filter((p) => p.name.trim());
+    if (form.splitPayment && extras.some((p) => !p.phone.trim())) { setNotice("Every split player needs a WhatsApp number, so payment requests can be sent."); return; }
+    const players = [{ name: form.name.trim(), phone: form.phone.trim() }, ...(form.splitPayment ? extras.map((p) => ({ name: p.name.trim(), phone: p.phone.trim() })) : [])];
+    const shares = equalShares(totalAmount, players, 0);
+    patchBookings(form.dateISO, (b) => [...b, { id: uid(), courtId: form.courtId, customerName: form.name.trim(), customerPhone: form.phone.trim(), dateISO: form.dateISO, startMinutes, durationMinutes, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount, splitPayment: form.splitPayment && players.length > 1, shares }]);
+    setNotice(form.splitPayment && players.length > 1
+      ? `Booking created for ${form.name} — ${fmtRs(totalAmount)} split ${players.length} ways (${fmtRs(Math.floor(totalAmount / players.length))} each). Payment requests ready in the booking's Payments panel.`
+      : `Booking created for ${form.name} — ${formatMinutesOfDay(startMinutes)}–${formatMinutesOfDay(startMinutes + durationMinutes)} (${formatDuration(durationMinutes)}), fee ${fmtRs(totalAmount)}.`);
+    setShowForm(false); setForm((f) => ({ ...f, name: "", phone: "", extraPlayers: [{ name: "", phone: "" }, { name: "", phone: "" }, { name: "", phone: "" }] }));
   }
 
   function handleCheckIn(b: Booking) {
@@ -220,8 +271,16 @@ export default function Dashboard() {
     if (clash) { setNotice(`Can't extend — the next slot is booked by ${clash.customerName}.`); return; }
     if (!b.lightsOffAt) return;
     const off = new Date(b.lightsOffAt.getTime() + extraMinutes * 60_000);
-    patchBookings(b.dateISO, (prev) => prev.map((x) => (x.id === b.id ? { ...x, durationMinutes: x.durationMinutes + extraMinutes, lightsOffAt: off } : x)));
-    setNotice(`Extended by ${formatDuration(extraMinutes)}. New lights-off: ${off.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
+    const extraFee = Math.round((settings.courtRatePerHour * extraMinutes) / 60);
+    patchBookings(b.dateISO, (prev) => prev.map((x) => {
+      if (x.id !== b.id) return x;
+      const newTotal = x.totalAmount + extraFee;
+      // Re-split the new total equally, keeping who has already paid (and how) intact.
+      const redistributed = equalShares(newTotal, x.shares.map((s) => ({ name: s.name, phone: s.phone })), 0);
+      const shares = x.shares.map((s, i) => ({ ...s, amountDue: redistributed[i].amountDue }));
+      return { ...x, durationMinutes: x.durationMinutes + extraMinutes, lightsOffAt: off, totalAmount: newTotal, shares };
+    }));
+    setNotice(`Extended by ${formatDuration(extraMinutes)} (+${fmtRs(extraFee)} added to the fee, re-split between players). New lights-off: ${off.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
   }
 
   function handleEndSession(b: Booking) {
@@ -240,6 +299,17 @@ export default function Dashboard() {
   function handleCancel(b: Booking) {
     patchBookings(b.dateISO, (prev) => prev.map((x) => (x.id === b.id ? { ...x, status: "cancelled" } : x)));
     setNotice("Booking cancelled. The slot is free again.");
+  }
+
+  function handleToggleSharePaid(b: Booking, share: BookingShare) {
+    const method = shareMethods[share.id] ?? "cash";
+    patchBookings(b.dateISO, (prev) => prev.map((x) => (x.id === b.id
+      ? { ...x, shares: x.shares.map((s) => (s.id === share.id ? { ...s, paid: !s.paid, method: !s.paid ? method : null } : s)) }
+      : x)));
+    const sum = paymentSummary({ ...b, shares: b.shares.map((s) => (s.id === share.id ? { ...s, paid: !s.paid } : s)) });
+    setNotice(share.paid
+      ? `${share.name}'s share (${fmtRs(share.amountDue)}) marked unpaid again.`
+      : `${share.name} paid ${fmtRs(share.amountDue)} via ${method}. ${sum.fullyPaid ? "Booking is now paid in full." : `${fmtRs(sum.outstanding)} still outstanding on this booking.`}`);
   }
 
   function handleToggleLights(court: Court) {
@@ -264,7 +334,7 @@ export default function Dashboard() {
   function handleReset() {
     completedRef.current.clear(); noShowRef.current.clear();
     setDays(seedAll());
-    setSettings({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23 });
+    setSettings({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23, courtRatePerHour: DEFAULT_RATE_PER_HOUR });
     setSelectedISO(isoFromDate(new Date()));
     setConfirmReset(false);
     setNotice("Demo data reset.");
@@ -294,6 +364,9 @@ export default function Dashboard() {
     completed: bookings.filter((b) => b.status === "completed").length,
     noShow: bookings.filter((b) => b.status === "no_show").length,
   };
+  const moneyBookings = bookings.filter((b) => b.status !== "cancelled" && b.status !== "no_show");
+  const collectedToday = moneyBookings.reduce((s, b) => s + paymentSummary(b).collected, 0);
+  const outstandingToday = moneyBookings.reduce((s, b) => s + paymentSummary(b).outstanding, 0);
 
   const hours = Array.from({ length: settings.closingHour - settings.openingHour }, (_, i) => settings.openingHour + i);
   const durationValid = Math.floor(form.durationMinutes) >= 1 && Math.floor(form.durationMinutes) <= 1440;
@@ -431,17 +504,27 @@ export default function Dashboard() {
             const check = canCheckIn(b, now);
             const noShowWaiting = isToday && b.status === "booked" && start <= now && end > now;
             const timeUp = b.status === "completed" && b.lightsOffAt;
+            const pay = paymentSummary(b);
+            const expanded = expandedBookingId === b.id;
+            const courtName = courts.find((c) => c.id === b.courtId)?.name ?? "Court";
             return (
-              <div key={b.id} className="flex flex-wrap items-center gap-3 p-3 text-sm">
+              <div key={b.id} className="p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-3">
                 <span className="font-mono font-semibold">{formatMinutesOfDay(b.startMinutes)}–{formatMinutesOfDay(b.startMinutes + b.durationMinutes)}</span>
                 <span className="text-pb-dim">({formatDuration(b.durationMinutes)})</span>
                 <span>{courts.find((c) => c.id === b.courtId)?.name}</span>
                 <span className="font-semibold">{b.customerName}</span>
                 <span className="text-pb-dim">{b.customerPhone}</span>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${chip.cls}`}>{chip.text}</span>
+                {b.status !== "cancelled" && (
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${pay.fullyPaid ? "bg-emerald-500/20 text-emerald-600" : pay.collected > 0 ? "bg-pb-amber/25" : "bg-red-500/15 text-red-500"}`}>
+                    {pay.fullyPaid ? `Paid in full · ${fmtRs(b.totalAmount)}` : b.splitPayment ? `Split · ${pay.paidCount}/${pay.shareCount} paid · ${fmtRs(pay.outstanding)} left` : `Unpaid · ${fmtRs(b.totalAmount)}`}
+                  </span>
+                )}
                 {timeUp ? <span className="text-xs text-pb-dim">Time&apos;s up — lights went off at {b.lightsOffAt!.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span> : null}
                 {noShowWaiting && <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-bold text-red-500">No-show waiting</span>}
                 <span className="ml-auto flex flex-wrap items-center gap-2">
+                  {b.status !== "cancelled" && <button onClick={() => setExpandedBookingId(expanded ? null : b.id)} className={btnCls}>{expanded ? "Hide payments" : "Payments"}</button>}
                   {b.status === "booked" && (
                     <>
                       <button disabled={!check.ok} title={check.ok ? "" : check.message} onClick={() => handleCheckIn(b)} className="rounded-[10px] bg-pb-amber px-3 py-1 font-bold text-pb-amber-ink disabled:cursor-not-allowed disabled:opacity-40">Check in</button>
@@ -459,6 +542,42 @@ export default function Dashboard() {
                   )}
                 </span>
               </div>
+              {expanded && b.status !== "cancelled" && (
+                <div className="mt-3 rounded-[10px] border border-pb-border bg-pb-surface2/60 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-extrabold uppercase tracking-wide text-xs">{b.splitPayment ? "Split payment" : "Payment"} — {courtName}</span>
+                    <span className="text-xs text-pb-dim">Total {fmtRs(b.totalAmount)} · Collected {fmtRs(pay.collected)} · Outstanding {fmtRs(pay.outstanding)}</span>
+                    <span className="ml-auto text-xs text-pb-dim">Prototype: players pay the club&apos;s JazzCash/Easypaisa or cash, staff mark each share paid. Automatic in-app payment is a later phase.</span>
+                  </div>
+                  <div className="mt-2 divide-y divide-pb-border">
+                    {b.shares.map((sh) => (
+                      <div key={sh.id} className="flex flex-wrap items-center gap-2 py-2">
+                        <span className="font-semibold">{sh.name}</span>
+                        <span className="text-pb-dim">{sh.phone}</span>
+                        <span className="font-mono font-semibold">{fmtRs(sh.amountDue)}</span>
+                        {sh.paid
+                          ? <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-bold text-emerald-600">Paid{sh.method ? ` · ${sh.method}` : ""}</span>
+                          : <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-bold text-red-500">Unpaid</span>}
+                        <span className="ml-auto flex flex-wrap items-center gap-2">
+                          {!sh.paid && (
+                            <>
+                              <select value={shareMethods[sh.id] ?? "cash"} onChange={(e) => setShareMethods((m) => ({ ...m, [sh.id]: e.target.value as PaymentMethod }))} className="rounded-[10px] border border-pb-border bg-pb-surface px-2 py-1 text-xs">
+                                <option value="cash">Cash</option>
+                                <option value="jazzcash">JazzCash</option>
+                                <option value="easypaisa">Easypaisa</option>
+                                <option value="card">Card</option>
+                              </select>
+                              <a href={whatsappReminderLink(b, sh, courtName)} target="_blank" rel="noreferrer" className={btnCls}>WhatsApp reminder</a>
+                            </>
+                          )}
+                          <button onClick={() => handleToggleSharePaid(b, sh)} className={sh.paid ? btnCls : "rounded-[10px] bg-pb-amber px-3 py-1 text-xs font-bold text-pb-amber-ink"}>{sh.paid ? "Undo paid" : "Mark paid"}</button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              </div>
             );
           })}
         </div>
@@ -467,8 +586,10 @@ export default function Dashboard() {
       {/* Today's numbers — Doc §6 */}
       <section className="mt-8">
         <h2 className="mb-2 font-extrabold uppercase tracking-wide">{isToday ? "Today's numbers" : "Day numbers"}</h2>
-        <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
+            ["Collected (court fees)", fmtRs(collectedToday)],
+            ["Outstanding (court fees)", fmtRs(outstandingToday)],
             ["Light hours", lightHours.toFixed(1)],
             ["Electricity cost", `Rs ${Math.round(actualCost).toLocaleString()}`],
             ["Saved vs lights-on-all-day", `Rs ${Math.round(saved).toLocaleString()}`],
@@ -512,6 +633,8 @@ export default function Dashboard() {
                 <input type="number" min={1} max={24} value={settings.closingHour} onChange={(e) => setSettings({ ...settings, closingHour: Number(e.target.value) })} className={inputCls} /></label>
               <label className="block text-sm">No-show wait (minutes)
                 <input type="number" min={0} value={settings.noShowWaitMinutes} onChange={(e) => setSettings({ ...settings, noShowWaitMinutes: Number(e.target.value) })} className={inputCls} /></label>
+              <label className="block text-sm">Court fee (Rs / hour)
+                <input type="number" min={0} step={100} value={settings.courtRatePerHour} onChange={(e) => setSettings({ ...settings, courtRatePerHour: Number(e.target.value) })} className={inputCls} /></label>
             </div>
             <p className="mt-2 text-xs text-pb-dim">Cost of 1 hour of lights = {settings.lightingPowerKw} kW × Rs {settings.electricityPricePerUnit} = Rs {settings.lightingPowerKw * settings.electricityPricePerUnit}</p>
             <div className="mt-4 flex gap-2">
@@ -530,7 +653,7 @@ export default function Dashboard() {
       {/* Booking modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onClick={() => setShowForm(false)}>
-          <form onSubmit={handleAddBooking} onClick={(e) => e.stopPropagation()} className="w-full max-w-lg rounded-t-2xl bg-pb-surface p-5 shadow-xl sm:rounded-[10px]">
+          <form onSubmit={handleAddBooking} onClick={(e) => e.stopPropagation()} className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-pb-surface p-5 shadow-xl sm:rounded-[10px]">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-extrabold uppercase tracking-wide">Add booking</h2>
               <button type="button" onClick={() => setShowForm(false)} className="text-xl leading-none text-pb-dim">×</button>
@@ -546,15 +669,44 @@ export default function Dashboard() {
                 <input type="time" required value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} className={inputCls} />
               </label>
               <label className="text-xs font-semibold text-pb-dim">Duration (minutes)
-                <input type="number" required min={1} max={1440} step={1} value={form.durationMinutes} onChange={(e) => setForm({ ...form, durationMinutes: Number(e.target.value) })} className={inputCls} />
+                <input type="number" required min={1} max={1440} step={1} value={form.durationMinutes} onChange={(e) => setForm((f) => { const v = Number(e.target.value); const prevAuto = Math.round((settings.courtRatePerHour * Math.floor(f.durationMinutes)) / 60); return { ...f, durationMinutes: v, totalAmount: f.totalAmount === prevAuto ? Math.round((settings.courtRatePerHour * Math.floor(v || 0)) / 60) : f.totalAmount }; })} className={inputCls} />
               </label>
+              <label className="text-xs font-semibold text-pb-dim">Court fee — total (Rs)
+                <input type="number" required min={0} step={50} value={form.totalAmount} onChange={(e) => setForm({ ...form, totalAmount: Number(e.target.value) })} className={inputCls} />
+              </label>
+              <p className="self-end pb-2 text-xs text-pb-dim">Auto from {fmtRs(settings.courtRatePerHour)}/hour × duration — edit the total if this booking has a different price.</p>
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {DURATION_CHIPS.map((m) => <button type="button" key={m} onClick={() => setForm({ ...form, durationMinutes: m })} className={chipCls}>{formatDuration(m)}</button>)}
+              {DURATION_CHIPS.map((m) => <button type="button" key={m} onClick={() => setForm((f) => { const prevAuto = Math.round((settings.courtRatePerHour * Math.floor(f.durationMinutes)) / 60); return { ...f, durationMinutes: m, totalAmount: f.totalAmount === prevAuto ? Math.round((settings.courtRatePerHour * m) / 60) : f.totalAmount }; })} className={chipCls}>{formatDuration(m)}</button>)}
             </div>
             <p className="mt-3 rounded-[10px] bg-pb-surface2 px-3 py-2 text-sm font-semibold">
-              {durationValid ? `${formatDuration(Math.floor(form.durationMinutes))} · ${formatMinutesOfDay(timeStringToMinutes(form.startTime))} – ${formatMinutesOfDay(timeStringToMinutes(form.startTime) + Math.floor(form.durationMinutes))}` : "Duration must be between 1 minute and 24 hours."}
+              {durationValid ? `${formatDuration(Math.floor(form.durationMinutes))} · ${formatMinutesOfDay(timeStringToMinutes(form.startTime))} – ${formatMinutesOfDay(timeStringToMinutes(form.startTime) + Math.floor(form.durationMinutes))} · Fee ${fmtRs(form.totalAmount || 0)}` : "Duration must be between 1 minute and 24 hours."}
             </p>
+            {/* Split payment (prototype) */}
+            <div className="mt-3 rounded-[10px] border border-pb-border p-3">
+              <label className="flex items-center gap-2 text-sm font-bold">
+                <input type="checkbox" checked={form.splitPayment} onChange={(e) => setForm({ ...form, splitPayment: e.target.checked })} className="h-4 w-4" />
+                Split payment between players
+              </label>
+              <p className="mt-1 text-xs text-pb-dim">Each player gets their own share and a WhatsApp payment request — nobody has to chase the captain, and the club chases nobody. The customer above is Player 1.</p>
+              {form.splitPayment && (
+                <div className="mt-2 space-y-2">
+                  {form.extraPlayers.map((p, i) => (
+                    <div key={i} className="grid gap-2 sm:grid-cols-2">
+                      <input placeholder={`Player ${i + 2} name`} value={p.name} onChange={(e) => setForm((f) => ({ ...f, extraPlayers: f.extraPlayers.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) }))} className={inputCls} />
+                      <input placeholder={`Player ${i + 2} WhatsApp number`} value={p.phone} onChange={(e) => setForm((f) => ({ ...f, extraPlayers: f.extraPlayers.map((x, j) => (j === i ? { ...x, phone: e.target.value } : x)) }))} className={inputCls} />
+                    </div>
+                  ))}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {form.extraPlayers.length < 7 && <button type="button" onClick={() => setForm((f) => ({ ...f, extraPlayers: [...f.extraPlayers, { name: "", phone: "" }] }))} className={btnCls}>+ Add player</button>}
+                    {form.extraPlayers.length > 1 && <button type="button" onClick={() => setForm((f) => ({ ...f, extraPlayers: f.extraPlayers.slice(0, -1) }))} className={btnCls}>Remove last</button>}
+                    <span className="text-xs font-semibold text-pb-dim">
+                      {(() => { const n = 1 + form.extraPlayers.filter((p) => p.name.trim()).length; return `${fmtRs(form.totalAmount || 0)} ÷ ${n} player${n === 1 ? "" : "s"} = ${fmtRs(Math.floor((form.totalAmount || 0) / n))} each`; })()}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="mt-4 flex gap-2">
               <button type="submit" disabled={!durationValid} className="flex-1 rounded-[10px] bg-pb-amber px-4 py-2.5 font-extrabold text-pb-amber-ink disabled:opacity-40">Save booking</button>
               <button type="button" onClick={() => setShowForm(false)} className={btnCls}>Cancel</button>

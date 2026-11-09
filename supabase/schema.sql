@@ -11,6 +11,7 @@ create table if not exists public.clubs (
   electricity_price_per_unit numeric not null default 50,
   no_show_wait_minutes int not null default 15,
   check_in_early_minutes int not null default 15,
+  court_rate_per_hour numeric not null default 4800,
   opening_hour int not null default 10,
   closing_hour int not null default 23,
   created_at timestamptz not null default now()
@@ -37,6 +38,8 @@ create table if not exists public.bookings (
   duration_minutes int not null check (duration_minutes > 0),
   status text not null default 'booked'
     check (status in ('booked','checked_in','completed','cancelled','no_show')),
+  total_amount numeric not null default 0,
+  split_payment boolean not null default false,
   checked_in_at timestamptz,
   lights_off_at timestamptz,
   created_at timestamptz not null default now(),
@@ -49,6 +52,24 @@ create table if not exists public.bookings (
       (booking_date + start_time)::timestamp + (duration_minutes || ' minutes')::interval
     ) with &&
   ) where (status in ('booked','checked_in'))
+);
+
+-- Split payment: one row per player share of a booking's court fee.
+-- Shares of a booking sum to bookings.total_amount. Stage 1 (prototype):
+-- staff mark a share paid when money lands on the club's own JazzCash /
+-- Easypaisa / cash; Stage 2 replaces the manual mark with gateway webhooks.
+create table if not exists public.booking_shares (
+  id uuid primary key default gen_random_uuid(),
+  club_id uuid not null references public.clubs(id) on delete cascade,
+  booking_id uuid not null references public.bookings(id) on delete cascade,
+  player_name text not null,
+  player_phone text not null,
+  amount_due numeric not null check (amount_due >= 0),
+  paid boolean not null default false,
+  method text check (method in ('cash','jazzcash','easypaisa','card')),
+  paid_at timestamptz,
+  reminder_sent_at timestamptz,
+  created_at timestamptz not null default now()
 );
 
 create table if not exists public.light_log (
@@ -66,11 +87,13 @@ create table if not exists public.light_log (
 alter table public.clubs enable row level security;
 alter table public.courts enable row level security;
 alter table public.bookings enable row level security;
+alter table public.booking_shares enable row level security;
 alter table public.light_log enable row level security;
 
 create policy "authenticated can read clubs" on public.clubs for select to authenticated using (true);
 create policy "authenticated can read courts" on public.courts for select to authenticated using (true);
 create policy "authenticated can manage bookings" on public.bookings for all to authenticated using (true) with check (true);
+create policy "authenticated can manage booking shares" on public.booking_shares for all to authenticated using (true) with check (true);
 create policy "authenticated can manage courts" on public.courts for all to authenticated using (true) with check (true);
 create policy "authenticated can read light log" on public.light_log for select to authenticated using (true);
 create policy "authenticated can insert light log" on public.light_log for insert to authenticated with check (true);
@@ -78,6 +101,7 @@ create policy "authenticated can insert light log" on public.light_log for inser
 -- Realtime (Doc §10: two phones always show the same thing)
 alter publication supabase_realtime add table public.courts;
 alter publication supabase_realtime add table public.bookings;
+alter publication supabase_realtime add table public.booking_shares;
 alter publication supabase_realtime add table public.light_log;
 
 -- Seed: one demo club + 3 courts

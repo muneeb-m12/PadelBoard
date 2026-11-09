@@ -8,6 +8,19 @@ export interface Court {
   manualOverride: boolean;
 }
 
+export type PaymentMethod = "cash" | "jazzcash" | "easypaisa" | "card";
+
+/** One player's share of a booking's court fee (split-payment prototype). */
+export interface BookingShare {
+  id: string;
+  name: string;
+  phone: string;
+  /** rupees owed by this player; all shares of a booking sum to its totalAmount */
+  amountDue: number;
+  paid: boolean;
+  method: PaymentMethod | null;
+}
+
 export interface Booking {
   id: string;
   courtId: string;
@@ -22,6 +35,12 @@ export interface Booking {
   status: BookingStatus;
   checkedInAt: Date | null;
   lightsOffAt: Date | null;
+  /** total court fee in rupees for this booking */
+  totalAmount: number;
+  /** true when the fee is split between players; false = organizer pays alone */
+  splitPayment: boolean;
+  /** per-player shares; a non-split booking has exactly one share (the organizer) */
+  shares: BookingShare[];
 }
 
 export interface LightLogEntry {
@@ -38,4 +57,6 @@ export interface ClubSettings {
   noShowWaitMinutes: number;
   openingHour: number;
   closingHour: number;
+  /** default court fee per hour in rupees — a booking's total is rate × duration unless overridden in the form */
+  courtRatePerHour: number;
 }
