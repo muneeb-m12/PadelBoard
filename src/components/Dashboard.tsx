@@ -6,8 +6,6 @@ import {
   bookingStart, canCheckIn, formatDuration, formatHour, formatMinutesOfDay, hasOverlap,
   isoAddDays, isoFromDate, isoToDate, lightsOffTime, minutesToTimeString, timeStringToMinutes,
 } from "@/lib/rules";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
-
 const uid = () => Math.random().toString(36).slice(2, 10);
 const DURATION_CHIPS = [1, 15, 30, 45, 60, 90, 120, 180];
 const DEFAULT_RATE_PER_HOUR = 4800;
@@ -393,7 +391,7 @@ export default function Dashboard() {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-black tracking-tight uppercase">PadelBoard</h1>
-          <p className="text-sm text-pb-dim">Demo Padel Club · {isSupabaseConfigured() ? "Supabase connected" : "Demo mode (no Supabase keys yet — see README)"}</p>
+          <p className="text-sm text-pb-dim">Demo Padel Club</p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))} className={btnCls} title="Switch theme">{theme === "dark" ? "☀ Light" : "☾ Dark"}</button>
@@ -715,7 +713,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <footer className="mt-10 border-t border-pb-border pt-4 text-xs text-pb-dim">PadelBoard Phase 1 demo — lights are simulated on screen. Production: Supabase (schema in /supabase) + Vercel Cron hitting /api/cron/switch-off every minute.</footer>
+      <footer className="mt-10 border-t border-pb-border pt-4 text-xs text-pb-dim">PadelBoard — bookings, court lights and payments, all in one place.</footer>
     </main>
   );
 }
