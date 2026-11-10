@@ -1,9 +1,9 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Booking, BookingShare, Court, LightLogEntry, ClubSettings, PaymentMethod } from "@/lib/types";
 import {
-  bookingStart, canCheckIn, formatDuration, formatHour, formatMinutesOfDay, hasOverlap,
+  bookingStart, canCheckIn, formatDuration, formatMinutesOfDay, hasOverlap,
   isoAddDays, isoFromDate, isoToDate, minutesToTimeString, sessionEnd, timeStringToMinutes,
 } from "@/lib/rules";
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -735,7 +735,6 @@ export default function Dashboard() {
   const stepGridWindow = (delta: number) =>
     setGridWindowStart(Math.max(gridStartMin, Math.min(winStartMin + delta, maxGridWindowStart)));
 
-  const hours = Array.from({ length: settings.closingHour - settings.openingHour }, (_, i) => settings.openingHour + i);
   const durationValid = Math.floor(form.durationMinutes) >= 1 && Math.floor(form.durationMinutes) <= 1440;
   const dateLabel = (() => {
     const d = isoToDate(selectedISO);
@@ -1197,34 +1196,6 @@ export default function Dashboard() {
             </div>
           );
         })}
-      </section>
-
-      {/* Free slots grid — Doc §4 */}
-      <section className="mt-6 overflow-x-auto">
-        <h2 className="mb-2 text-[17px] font-semibold">Free slots</h2>
-        <div className="grid min-w-[560px] gap-1" style={{ gridTemplateColumns: `84px repeat(${courts.length}, 1fr)` }}>
-          <div className="px-2 py-1 text-xs font-bold text-pb-dim">Time</div>
-          {courts.map((c) => <div key={c.id} className="px-2 py-1 text-center text-xs font-bold text-pb-dim">{c.name}</div>)}
-          {hours.map((h) => {
-            const past = isToday && (h + 1) * 60 <= now.getHours() * 60 + now.getMinutes();
-            return (
-              <Fragment key={h}>
-                <div className="px-2 py-2 text-sm font-semibold">{formatHour(h)}</div>
-                {courts.map((c) => {
-                  const occ = bookings.find((b) => b.courtId === c.id && (b.status === "booked" || b.status === "checked_in") && b.startMinutes < (h + 1) * 60 && h * 60 < b.startMinutes + b.durationMinutes);
-                  const live = occ && occ.status === "checked_in" && isToday && occ.lightsOffAt !== null && occ.lightsOffAt > now && bookingStart(occ) <= now;
-                  return (
-                    <button key={`${h}-${c.id}`} disabled={!!occ} onClick={() => openForm(c.id, h * 60, selectedISO)}
-                      className={`rounded-[10px] px-2 py-2 text-sm ${live ? "bg-pb-accent font-bold text-white" : occ ? "bg-pb-surface2 font-medium text-pb-dim" : past ? "bg-pb-surface text-pb-dim/60 hover:bg-pb-surface2" : "bg-pb-surface font-medium hover:bg-pb-accent/15"}`}>
-                      {occ ? occ.customerName : "Free"}
-                    </button>
-                  );
-                })}
-              </Fragment>
-            );
-          })}
-        </div>
-        <p className="mt-1 text-xs text-pb-dim">Tap a free slot to create a booking for it.</p>
       </section>
 
       {/* Bottom panels — KICKS-style: performance trend + day state */}

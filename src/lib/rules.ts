@@ -67,11 +67,6 @@ export function sessionEnd(booking: Booking): Date {
   return new Date(bookedEnd(booking).getTime() + booking.compMinutes * 60_000);
 }
 
-export function formatHour(h: number): string {
-  const d = new Date(); d.setHours(h % 24, 0, 0, 0);
-  return d.toLocaleTimeString([], { hour: "numeric" });
-}
-
 /** 1170 -> "7:30 PM" (wraps past midnight). */
 export function formatMinutesOfDay(minutes: number): string {
   const d = new Date(); d.setHours(0, 0, 0, 0); d.setMinutes(minutes);
