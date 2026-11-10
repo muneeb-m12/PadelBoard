@@ -1259,19 +1259,6 @@ export default function Dashboard() {
             </div>
             <p className="mt-1.5 text-xs text-pb-dim">{collectedPct}% of the day&apos;s court fees collected (cancelled and no-show bookings excluded).</p>
           </div>
-          <div className="mt-3 grid grid-cols-3 gap-3 text-center">
-            {[
-              ["Light hours", lightHours.toFixed(1)],
-              ["Electricity cost", `Rs ${Math.round(actualCost).toLocaleString()}`],
-              ["Saved today", `Rs ${Math.round(saved).toLocaleString()}`],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl bg-pb-surface2 px-2 py-2.5">
-                <p className="text-lg font-extrabold tabular-nums">{value}</p>
-                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-pb-dim">{label}</p>
-              </div>
-            ))}
-          </div>
-          <p className="mt-3 text-xs text-pb-dim">Savings assume lights would otherwise stay on for all opening hours ({settings.openingHour}–{settings.closingHour}) on every court, at {settings.lightingPowerKw} kW × Rs {settings.electricityPricePerUnit}/unit. Light hours are summed from the day&apos;s light log.</p>
         </div>
       </section>
 
