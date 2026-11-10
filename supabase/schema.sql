@@ -86,7 +86,10 @@ create table if not exists public.light_log (
   club_id uuid not null references public.clubs(id) on delete cascade,
   court_id uuid not null references public.courts(id) on delete cascade,
   booking_id uuid references public.bookings(id) on delete set null,
-  action text not null check (action in ('on','off')),
+  -- 'arrived' is not a switch event: it records an early check-in (arrival
+  -- registered, lights still off — they turn on at the booked start, which
+  -- gets its own 'on' row). Light-hours maths must ignore 'arrived' rows.
+  action text not null check (action in ('on','off','arrived')),
   reason text not null check (reason in ('check_in','automatic','manual','extension','power_restore','club_delay')),
   -- Free-text detail for the history line; club-delay grants record e.g. 'Club delay +10 min' here.
   note text,

@@ -50,7 +50,11 @@ export interface Booking {
 export interface LightLogEntry {
   id: string;
   courtName: string;
-  action: "on" | "off";
+  /** "arrived" is NOT a switch event: it records an early check-in (arrival
+   *  registered while the lights are still off — they turn on at the booked
+   *  start, which gets its own "on" entry when it arrives). Light-hours maths
+   *  must ignore "arrived" rows. */
+  action: "on" | "off" | "arrived";
   reason: "check_in" | "automatic" | "manual" | "extension" | "power_restore" | "club_delay";
   at: Date;
   /** Optional line shown instead of "<court> lights on/off" — used for club-delay grants, e.g. "Club delay +10 min". */

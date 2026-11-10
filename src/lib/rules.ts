@@ -54,9 +54,11 @@ export function bookedEnd(booking: Booking): Date {
 /** Timing rule (decided 2026-11-10): the session end is anchored to the BOOKED
  *  end — booked start + duration (paid extensions included) + club-delay comp
  *  minutes. Check-in time never moves the end: a player who checks in late
- *  through his own fault loses that time, an early check-in inside the 15-min
- *  window just turns the lights on sooner, and only paid extensions or free
- *  club-delay comp push the end later. */
+ *  through his own fault loses that time, and only paid extensions or free
+ *  club-delay comp push the end later. Lights-on is anchored to the booked
+ *  START (correction, 2026-11-10): an early check-in inside the 15-min window
+ *  only registers the arrival — lights stay off and turn on exactly at the
+ *  booked start; a check-in at/after the start turns them on immediately. */
 export function sessionEnd(booking: Booking): Date {
   return new Date(bookedEnd(booking).getTime() + booking.compMinutes * 60_000);
 }

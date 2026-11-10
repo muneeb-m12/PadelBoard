@@ -146,6 +146,7 @@ export default function Dashboard() {
   const [shareMethods, setShareMethods] = useState<Record<string, PaymentMethod>>({});
   const completedRef = useRef<Set<string>>(new Set());
   const noShowRef = useRef<Set<string>>(new Set());
+  const startedRef = useRef<Set<string>>(new Set());
 
   const day: DayData = days[selectedISO] ?? { courts: days[todayISO]?.courts ?? [], bookings: [], log: [] };
   const courts = day.courts;
@@ -163,7 +164,7 @@ export default function Dashboard() {
     // Courts are shared across days in demo data — apply to every day bucket.
     setDays((prev) => Object.fromEntries(Object.entries(prev).map(([k, d]) => [k, { ...d, courts: fn(d.courts) }])));
   };
-  const addLog = (iso: string, courtName: string, action: "on" | "off", reason: LightLogEntry["reason"], detail?: string) =>
+  const addLog = (iso: string, courtName: string, action: LightLogEntry["action"], reason: LightLogEntry["reason"], detail?: string) =>
     patchDay(iso, (d) => ({ ...d, log: [{ id: uid(), courtName, action, reason, at: new Date(), detail }, ...d.log] }));
 
   // tick every second for countdowns + live clock
@@ -188,8 +189,16 @@ export default function Dashboard() {
   // stored copy once let courts show ON after time-up.
   const liveSessionForCourt = (courtId: string, at: Date) =>
     bookings.find((b) => b.courtId === courtId && b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > at);
+  // Lights burn only INSIDE the booked window: a checked-in session counts
+  // toward lights-on only once its BOOKED START has arrived. An early check-in
+  // (inside the 15-min window) registers the arrival but the court stays dark
+  // until the start; a check-in at/after the start lights it immediately.
+  const lightsSessionForCourt = (courtId: string, at: Date) => {
+    const s = liveSessionForCourt(courtId, at);
+    return s && bookingStart(s) <= at ? s : undefined;
+  };
   const lightsOnFor = (court: Court, at: Date) =>
-    court.manualOverride ? court.manualLightsOn : liveSessionForCourt(court.id, at) !== undefined;
+    court.manualOverride ? court.manualLightsOn : lightsSessionForCourt(court.id, at) !== undefined;
 
   // Doc §3 step 6 + no-show sweep (today only): complete expired sessions,
   // log automatic switch-off, auto-mark bookings past their end as no-show.
@@ -207,6 +216,18 @@ export default function Dashboard() {
     if (offEntries.length > 0)
       patchDay(todayISO, (d) => ({ ...d, log: [...offEntries.map((b) => ({ id: uid(), courtName: courts.find((c) => c.id === b.courtId)?.name ?? "Court", action: "off" as const, reason: "automatic" as const, at: new Date() })), ...d.log] }));
     if (due.length > 0) setNotice(`Time up — ${due.map((b) => b.customerName).join(", ")}: session completed, lights off automatically.`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now, isToday]);
+
+  // Start sweep (today only): a session that was checked in EARLY only had its
+  // arrival logged — when its booked start arrives, the lights turn on, so log
+  // that switch-on exactly once (same ref-guarded pattern as the expiry sweep).
+  useEffect(() => {
+    if (!isToday) return;
+    const starting = bookings.filter((b) => b.status === "checked_in" && b.checkedInAt !== null && b.checkedInAt < bookingStart(b) && bookingStart(b) <= now && !startedRef.current.has(b.id));
+    if (starting.length === 0) return;
+    starting.forEach((b) => startedRef.current.add(b.id));
+    patchDay(todayISO, (d) => ({ ...d, log: [...starting.map((b) => ({ id: uid(), courtName: courts.find((c) => c.id === b.courtId)?.name ?? "Court", action: "on" as const, reason: "check_in" as const, at: new Date() })), ...d.log] }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [now, isToday]);
 
@@ -271,13 +292,22 @@ export default function Dashboard() {
     if (!check.ok) { setNotice(check.message); return; }
     const at = new Date();
     // The end is anchored to the BOOKED end (start + duration + comp), never to
-    // the check-in moment: checking in early just lights the court sooner, and
-    // a late arrival through the player's own fault loses the missed minutes.
+    // the check-in moment: a late arrival through the player's own fault loses
+    // the missed minutes. Lights-on is anchored to the BOOKED START: checking
+    // in early (15-min window) only registers the arrival — the court stays
+    // dark until the start; checking in at/after the start lights it at once.
     const off = sessionEnd(b);
+    const start = bookingStart(b);
+    const courtName = courts.find((c) => c.id === b.courtId)?.name ?? "Court";
     patchBookings(b.dateISO, (prev) => prev.map((x) => (x.id === b.id ? { ...x, status: "checked_in", checkedInAt: at, lightsOffAt: off } : x)));
     patchCourts((cs) => cs.map((c) => (c.id === b.courtId ? { ...c, manualOverride: false, manualLightsOn: false } : c)));
-    addLog(b.dateISO, courts.find((c) => c.id === b.courtId)?.name ?? "Court", "on", "check_in");
-    setNotice(`${b.customerName} checked in. Session ends at the booked end — lights off at ${off.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
+    if (at < start) {
+      addLog(b.dateISO, courtName, "arrived", "check_in", `Checked in — lights on at ${start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`);
+      setNotice(`${b.customerName} checked in — arrival registered. Lights stay off and turn on at the booked start (${start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}); the session ends at the booked end — lights off at ${off.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
+    } else {
+      addLog(b.dateISO, courtName, "on", "check_in");
+      setNotice(`${b.customerName} checked in — lights on. Session ends at the booked end — lights off at ${off.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
+    }
   }
 
   function handleExtend(b: Booking, extraMinutes: number) {
@@ -360,7 +390,7 @@ export default function Dashboard() {
   }
 
   function handleReset() {
-    completedRef.current.clear(); noShowRef.current.clear();
+    completedRef.current.clear(); noShowRef.current.clear(); startedRef.current.clear();
     setDays(seedAll());
     setSettings({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23, courtRatePerHour: DEFAULT_RATE_PER_HOUR });
     setSelectedISO(isoFromDate(new Date()));
@@ -376,7 +406,9 @@ export default function Dashboard() {
     const onSince = new Map<string, number>();
     for (const e of sorted) {
       if (e.action === "on") { if (!onSince.has(e.courtName)) onSince.set(e.courtName, e.at.getTime()); }
-      else { const s = onSince.get(e.courtName); if (s !== undefined) { lightMinutes += (e.at.getTime() - s) / 60_000; onSince.delete(e.courtName); } }
+      // "arrived" rows are not switch events (early check-in, lights still
+      // off) — only a real "off" closes an open interval.
+      else if (e.action === "off") { const s = onSince.get(e.courtName); if (s !== undefined) { lightMinutes += (e.at.getTime() - s) / 60_000; onSince.delete(e.courtName); } }
     }
     if (isToday) for (const s of onSince.values()) lightMinutes += (now.getTime() - s) / 60_000;
   }
@@ -398,7 +430,7 @@ export default function Dashboard() {
 
   // ---- KICKS-style layout data (sidebar stats, hero card, trend panel) ----
   const scrollToId = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  const liveNowCount = isToday ? bookings.filter((b) => b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > now).length : 0;
+  const liveNowCount = isToday ? bookings.filter((b) => b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > now && bookingStart(b) <= now).length : 0;
   const courtsLive = isToday ? courts.filter((c) => lightsOnFor(c, now)).length : 0;
   const nextBooking = [...bookings]
     .filter((b) => b.status === "booked" && (!isToday || bookingStart(b) > now))
@@ -431,6 +463,7 @@ export default function Dashboard() {
   })();
 
   const statusChip = (b: Booking): { text: string; cls: string } => {
+    if (b.status === "checked_in" && b.lightsOffAt && b.lightsOffAt > now && bookingStart(b) > now) return { text: `Checked in · lights on at ${formatMinutesOfDay(b.startMinutes)}`, cls: "bg-pb-surface2 text-pb-dim" };
     if (b.status === "checked_in" && b.lightsOffAt && b.lightsOffAt > now) return { text: "Checked in · lights on", cls: "bg-pb-amber text-pb-amber-ink" };
     if (b.status === "completed") return { text: "Completed · lights off", cls: "bg-pb-surface2 text-pb-dim" };
     if (b.status === "booked") return { text: "Booked", cls: "bg-pb-surface2" };
@@ -586,13 +619,16 @@ export default function Dashboard() {
           const nextForCourt = [...bookings]
             .filter((b) => b.courtId === court.id && b.status === "booked" && (!isToday || b.startMinutes > nowMin))
             .sort((a, b) => a.startMinutes - b.startMinutes)[0];
-          const status = active
-            ? `In play · ${countdown(active.lightsOffAt, now)} left`
-            : on
-              ? "Lights on · manual override"
-              : nextForCourt
-                ? `Free · next ${formatMinutesOfDay(nextForCourt.startMinutes)}`
-                : "Free";
+          const pending = active !== undefined && bookingStart(active) > now;
+          const status = pending
+            ? `Checked in · lights on at ${formatMinutesOfDay(active.startMinutes)}`
+            : active
+              ? `In play · ${countdown(active.lightsOffAt, now)} left`
+              : on
+                ? "Lights on · manual override"
+                : nextForCourt
+                  ? `Free · next ${formatMinutesOfDay(nextForCourt.startMinutes)}`
+                  : "Free";
           return (
             <button key={court.id} onClick={() => { setFocusedCourtId(court.id); scrollToId(`court-card-${court.id}`); }}
               className={`min-w-[176px] flex-1 rounded-[10px] border p-3 text-left ${on ? "border-pb-amber bg-pb-surface" : "border-pb-border bg-pb-surface"} hover:bg-pb-surface2`}>
@@ -611,6 +647,7 @@ export default function Dashboard() {
         {courts.map((court) => {
           const active = isToday ? activeForCourt(court.id) : undefined;
           const lightsOn = isToday && lightsOnFor(court, now);
+          const pending = active !== undefined && bookingStart(active) > now;
           return (
             <div key={court.id} id={`court-card-${court.id}`} className={`rounded-[10px] border p-4 ${lightsOn ? "lit-glow border-pb-amber bg-pb-amber text-pb-amber-ink" : "border-pb-border bg-pb-surface"} ${focusedCourtId === court.id ? "ring-2 ring-pb-amber" : ""}`}>
               <div className="flex items-center justify-between">
@@ -623,8 +660,12 @@ export default function Dashboard() {
               {active ? (
                 <div className="mt-3">
                   <p className="text-sm font-semibold">{active.customerName} · {active.customerPhone}</p>
-                  <p className="font-black leading-none text-4xl tabular-nums">{countdown(active.lightsOffAt, now)}</p>
-                  <p className={`mt-1 text-xs ${lightsOn ? "" : "text-pb-dim"} opacity-80`}>Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
+                  <p className="font-black leading-none text-4xl tabular-nums">{countdown(pending ? bookingStart(active) : active.lightsOffAt, now)}</p>
+                  {pending ? (
+                    <p className="mt-1 text-xs text-pb-dim">Checked in · lights on at {formatMinutesOfDay(active.startMinutes)} · Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
+                  ) : (
+                    <p className={`mt-1 text-xs ${lightsOn ? "" : "text-pb-dim"} opacity-80`}>Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
+                  )}
                 </div>
               ) : (
                 <p className={`mt-3 text-sm ${lightsOn ? "" : "text-pb-dim"}`}>
@@ -656,7 +697,7 @@ export default function Dashboard() {
                 <div className="px-2 py-2 text-sm font-semibold">{formatHour(h)}</div>
                 {courts.map((c) => {
                   const occ = bookings.find((b) => b.courtId === c.id && (b.status === "booked" || b.status === "checked_in") && b.startMinutes < (h + 1) * 60 && h * 60 < b.startMinutes + b.durationMinutes);
-                  const live = occ && occ.status === "checked_in" && isToday && occ.lightsOffAt !== null && occ.lightsOffAt > now;
+                  const live = occ && occ.status === "checked_in" && isToday && occ.lightsOffAt !== null && occ.lightsOffAt > now && bookingStart(occ) <= now;
                   return (
                     <button key={`${h}-${c.id}`} disabled={!!occ} onClick={() => openForm(c.id, h * 60, selectedISO)}
                       className={`rounded-[10px] px-2 py-2 text-sm ${live ? "bg-pb-amber font-bold text-pb-amber-ink" : occ ? "bg-pb-surface2 font-medium text-pb-dim" : past ? "bg-pb-surface text-pb-dim/60 hover:bg-pb-surface2" : "bg-pb-surface font-medium hover:bg-pb-amber/25"}`}>
@@ -845,8 +886,8 @@ export default function Dashboard() {
           <ul className="space-y-1.5 text-sm">
             {[...log].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 12).map((l) => (
               <li key={l.id} className="flex items-center gap-2">
-                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${l.action === "on" ? "bg-pb-amber text-pb-amber-ink" : "bg-pb-surface2 text-pb-dim"}`}>{l.action.toUpperCase()}</span>
-                <span>{l.at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} — {l.detail ?? `${l.courtName} lights ${l.action}`}</span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${l.action === "on" ? "bg-pb-amber text-pb-amber-ink" : "bg-pb-surface2 text-pb-dim"}`}>{l.action === "arrived" ? "ARRIVED" : l.action.toUpperCase()}</span>
+                <span>{l.at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} — {l.detail ?? (l.action === "arrived" ? `${l.courtName} — checked in, lights still off` : `${l.courtName} lights ${l.action}`)}</span>
                 <span className="text-pb-dim">({l.reason.replace("_", " ")})</span>
               </li>
             ))}
