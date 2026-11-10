@@ -587,7 +587,7 @@ export default function Dashboard() {
   const collectedToday = moneyBookings.reduce((s, b) => s + paymentSummary(b).collected, 0);
   const outstandingToday = moneyBookings.reduce((s, b) => s + paymentSummary(b).outstanding, 0);
 
-  // ---- KICKS-style layout data (sidebar stats, hero card, trend panel) ----
+  // ---- KICKS-style layout data (sidebar stats, stat chips, trend panel) ----
   const scrollToId = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const liveNowCount = isToday ? bookings.filter((b) => b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > now && bookingStart(b) <= now).length : 0;
   const courtsLive = isToday ? courts.filter((c) => lightsOnFor(c, now)).length : 0;
@@ -743,12 +743,19 @@ export default function Dashboard() {
       </aside>
 
     <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight uppercase">PadelBoard</h1>
-          <p className="text-sm text-pb-dim">Demo Padel Club</p>
-        </div>
-        <div className="flex gap-2">
+      <header className="flex flex-wrap items-center gap-2">
+        {/* Compact brand for phones — the sidebar carries the branding on md+ screens */}
+        <span className="text-lg font-black uppercase leading-none tracking-tight md:hidden">Padel<span className="text-pb-amber">Board</span><span className="ml-1.5 text-xs font-semibold normal-case tracking-normal text-pb-dim">· Demo Padel Club</span></span>
+        <button onClick={() => setSelectedISO(isoAddDays(selectedISO, -1))} className={btnCls}>← Prev day</button>
+        <span className="px-1 text-lg font-extrabold">{dateLabel}</span>
+        <button onClick={() => setSelectedISO(isoAddDays(selectedISO, 1))} className={btnCls}>Next day →</button>
+        <input type="date" value={selectedISO} onChange={(e) => e.target.value && setSelectedISO(e.target.value)} className="rounded-[10px] border border-pb-border bg-pb-surface px-2 py-1.5 text-sm" />
+        {!isToday && <button onClick={() => setSelectedISO(todayISO)} className={btnCls}>Back to today</button>}
+        <span className="flex items-center gap-2 text-sm font-semibold text-pb-dim">
+          <span className="pulse-dot inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
+          Live · {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+        </span>
+        <div className="ml-auto flex gap-2">
           {/* Notification bell: standing alerts + unread action notices */}
           <div className="relative" ref={notifRef}>
             <button onClick={toggleNotifications} className={`${btnCls} relative`} title="Notifications" aria-label="Notifications" aria-expanded={showNotifications}>
@@ -795,66 +802,24 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Date bar */}
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        <button onClick={() => setSelectedISO(isoAddDays(selectedISO, -1))} className={btnCls}>← Prev day</button>
-        <span className="px-1 text-lg font-extrabold">{dateLabel}</span>
-        <button onClick={() => setSelectedISO(isoAddDays(selectedISO, 1))} className={btnCls}>Next day →</button>
-        <input type="date" value={selectedISO} onChange={(e) => e.target.value && setSelectedISO(e.target.value)} className="rounded-[10px] border border-pb-border bg-pb-surface px-2 py-1.5 text-sm" />
-        {!isToday && <button onClick={() => setSelectedISO(todayISO)} className={btnCls}>Back to today</button>}
-        <span className="ml-auto flex items-center gap-2 text-sm font-semibold text-pb-dim">
-          <span className="pulse-dot inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
-          Live · {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-        </span>
-      </div>
-
-      {/* Hero band — night court visual (pure CSS/SVG) with a live club card */}
-      <section className="relative mt-6 h-56 overflow-hidden rounded-[10px] border border-pb-border sm:h-60">
-        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 800 260" preserveAspectRatio="xMidYMid slice" aria-hidden>
-          <defs>
-            <linearGradient id="pbSky" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#060d08" />
-              <stop offset="60%" stopColor="#0b1d11" />
-              <stop offset="100%" stopColor="#0e2415" />
-            </linearGradient>
-            <radialGradient id="pbGlow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#ffc21f" stopOpacity="0.55" />
-              <stop offset="100%" stopColor="#ffc21f" stopOpacity="0" />
-            </radialGradient>
-            <linearGradient id="pbFloor" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#1d5c33" />
-              <stop offset="100%" stopColor="#123d21" />
-            </linearGradient>
-          </defs>
-          <rect width="800" height="260" fill="url(#pbSky)" />
-          <circle cx="140" cy="26" r="95" fill="url(#pbGlow)" />
-          <circle cx="660" cy="26" r="95" fill="url(#pbGlow)" />
-          <line x1="140" y1="18" x2="140" y2="96" stroke="#3f5546" strokeWidth="4" />
-          <line x1="660" y1="18" x2="660" y2="96" stroke="#3f5546" strokeWidth="4" />
-          <rect x="118" y="6" width="44" height="12" rx="3" fill="#ffc21f" opacity="0.9" />
-          <rect x="638" y="6" width="44" height="12" rx="3" fill="#ffc21f" opacity="0.9" />
-          <polygon points="250,92 550,92 622,242 178,242" fill="#ffffff" opacity="0.06" />
-          <polygon points="178,242 622,242 550,92 250,92" fill="url(#pbFloor)" />
-          <polygon points="216,226 584,226 540,106 260,106" fill="none" stroke="#e9f1e9" strokeWidth="3" opacity="0.85" />
-          <line x1="400" y1="106" x2="400" y2="226" stroke="#e9f1e9" strokeWidth="3" opacity="0.85" />
-          <line x1="243" y1="152" x2="557" y2="152" stroke="#e9f1e9" strokeWidth="2.5" opacity="0.7" />
-          <line x1="229" y1="192" x2="571" y2="192" stroke="#e9f1e9" strokeWidth="2.5" opacity="0.7" />
-          <line x1="222" y1="180" x2="578" y2="180" stroke="#050807" strokeWidth="7" opacity="0.9" />
-          <line x1="222" y1="176.5" x2="578" y2="176.5" stroke="#e9f1e9" strokeWidth="2" />
-        </svg>
-        <div className="absolute bottom-0 left-0 p-5">
-          <p className="text-2xl font-black uppercase leading-none tracking-tight drop-shadow sm:text-3xl">Demo Padel Club</p>
-          <p className="mt-1 max-w-[240px] text-xs font-medium text-white/75 sm:max-w-none sm:text-sm">Night padel — courts, lights and payments on one board.</p>
-        </div>
-        <div className="absolute right-3 top-3 w-52 max-w-[72%] rounded-[10px] border border-white/15 bg-black/45 p-3 text-white shadow-lg backdrop-blur-sm sm:right-4 sm:top-4">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-white/70">{isToday ? "Tonight at the club" : "On this day"}</p>
-          <p className="mt-1 text-xl font-black tabular-nums leading-none">{now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</p>
-          <p className="mt-2 text-xs font-semibold">{isToday ? `${liveNowCount} of ${courts.length} courts in use` : `${counts.total} booking${counts.total === 1 ? "" : "s"} on this day`}</p>
-          <p className="mt-0.5 text-xs text-white/75">
-            {nextBooking
-              ? <>Next: <span className="font-semibold text-white">{nextBooking.customerName}</span> · {courts.find((c) => c.id === nextBooking.courtId)?.name} · {formatMinutesOfDay(nextBooking.startMinutes)}</>
-              : "No upcoming bookings"}
-          </p>
+      {/* Stat chips — the day's headline numbers; the last chip carries
+          the next booking that used to live on the hero card */}
+      <section className="mt-5 flex flex-wrap gap-2" aria-label="Day at a glance">
+        {[
+          { label: isToday ? "Bookings today" : "Bookings", value: String(counts.total), amber: false },
+          { label: "Occupancy", value: `${utilization}%`, amber: false },
+          { label: "Collected", value: fmtRs(collectedToday), amber: false },
+          { label: "Outstanding", value: fmtRs(outstandingToday), amber: true },
+          { label: isToday ? "Lights saved today" : "Lights saved", value: `Rs ${Math.round(saved).toLocaleString()}`, amber: false },
+        ].map((chip) => (
+          <div key={chip.label} className="rounded-[10px] border border-pb-border bg-pb-surface px-3 py-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-pb-dim">{chip.label} </span>
+            <span className={`text-sm font-black tabular-nums ${chip.amber ? "text-pb-amber" : ""}`}>{chip.value}</span>
+          </div>
+        ))}
+        <div className="rounded-[10px] border border-pb-border bg-pb-surface px-3 py-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-pb-dim">Next </span>
+          <span className="text-sm font-black">{nextBooking ? <>{nextBooking.customerName} · {courts.find((c) => c.id === nextBooking.courtId)?.name} · {formatMinutesOfDay(nextBooking.startMinutes)}</> : "No upcoming bookings"}</span>
         </div>
       </section>
 
@@ -891,83 +856,6 @@ export default function Dashboard() {
             </button>
           );
         })}
-      </section>
-
-      {/* Court cards — Doc §4 */}
-      <section id="courts" className="mt-6 grid scroll-mt-4 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {courts.map((court) => {
-          const active = isToday ? activeForCourt(court.id) : undefined;
-          const lightsOn = isToday && lightsOnFor(court, now);
-          const pending = active !== undefined && bookingStart(active) > now;
-          const changeover = isToday && !active && !court.manualOverride ? changeoverForCourt(court.id, now) : undefined;
-          return (
-            <div key={court.id} id={`court-card-${court.id}`} className={`rounded-[10px] border p-4 ${lightsOn ? "lit-glow border-pb-amber bg-pb-amber text-pb-amber-ink" : "border-pb-border bg-pb-surface"} ${focusedCourtId === court.id ? "ring-2 ring-pb-amber" : ""}`}>
-              <div className="flex items-center justify-between">
-                <h2 className="font-extrabold uppercase tracking-wide">{court.name}</h2>
-                <span className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-bold ${lightsOn ? "bg-pb-amber-ink text-pb-amber" : "bg-pb-surface2 text-pb-dim"}`}>
-                  {lightsOn && <span className="pulse-dot inline-block h-2 w-2 rounded-full bg-pb-amber" />}
-                  {lightsOn ? "Lights ON" : "Lights off"}
-                </span>
-              </div>
-              {active ? (
-                <div className="mt-3">
-                  <p className="text-sm font-semibold">{active.customerName} · {active.customerPhone}</p>
-                  <p className="font-black leading-none text-4xl tabular-nums">{countdown(pending ? bookingStart(active) : active.lightsOffAt, now)}</p>
-                  {pending ? (
-                    <p className="mt-1 text-xs text-pb-dim">Checked in · lights on at {formatMinutesOfDay(active.startMinutes)} · Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
-                  ) : (
-                    <p className={`mt-1 text-xs ${lightsOn ? "" : "text-pb-dim"} opacity-80`}>Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
-                  )}
-                </div>
-              ) : changeover ? (
-                <div className="mt-3">
-                  <p className="text-sm font-semibold">{changeover.prev.customerName} finished · next {changeover.next.customerName} at {formatMinutesOfDay(changeover.next.startMinutes)}</p>
-                  <p className="font-black leading-none text-4xl tabular-nums">{countdown(changeover.until, now)}</p>
-                  <p className={`mt-1 text-xs ${lightsOn ? "" : "text-pb-dim"} opacity-80`}>Changeover · lights off at {changeover.until.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} if {changeover.next.customerName} doesn&apos;t check in</p>
-                </div>
-              ) : (
-                <p className={`mt-3 text-sm ${lightsOn ? "" : "text-pb-dim"}`}>
-                  {!isToday ? "Sessions show live on the day" : lightsOn && court.manualOverride ? "Manual override — lights forced on by staff" : "No active session"}{court.manualOverride && isToday ? " · Manual override active" : ""}
-                </p>
-              )}
-              {isToday && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button onClick={() => handleToggleLights(court)} className={lightsOn ? "rounded-[10px] bg-pb-amber-ink px-3 py-1.5 text-sm font-bold text-pb-amber" : btnCls}>{lightsOn ? "Turn off manually" : "Turn on manually"}</button>
-                  {court.manualOverride && <button onClick={() => handleBackToAuto(court)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Back to auto</button>}
-                  {active && <><button onClick={() => handleExtend(active, 30)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Extend 30m</button><button onClick={() => handleExtend(active, 60)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Extend 1h</button><span className="flex items-center gap-1 text-sm font-bold" title="Free minutes when the delay was the club's fault — no charge, fee unchanged">Club delay {[5, 10, 15].map((mins) => <button key={mins} onClick={() => handleClubDelay(active, mins)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-2 py-1.5 text-sm font-bold" : btnCls}>+{mins}m</button>)}</span><button onClick={() => handleEndSession(active)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>End session</button></>}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </section>
-
-      {/* Free slots grid — Doc §4 */}
-      <section className="mt-8 overflow-x-auto">
-        <h2 className="mb-2 font-extrabold uppercase tracking-wide">Free slots</h2>
-        <div className="grid min-w-[560px] gap-1" style={{ gridTemplateColumns: `84px repeat(${courts.length}, 1fr)` }}>
-          <div className="px-2 py-1 text-xs font-bold text-pb-dim">Time</div>
-          {courts.map((c) => <div key={c.id} className="px-2 py-1 text-center text-xs font-bold text-pb-dim">{c.name}</div>)}
-          {hours.map((h) => {
-            const past = isToday && (h + 1) * 60 <= now.getHours() * 60 + now.getMinutes();
-            return (
-              <Fragment key={h}>
-                <div className="px-2 py-2 text-sm font-semibold">{formatHour(h)}</div>
-                {courts.map((c) => {
-                  const occ = bookings.find((b) => b.courtId === c.id && (b.status === "booked" || b.status === "checked_in") && b.startMinutes < (h + 1) * 60 && h * 60 < b.startMinutes + b.durationMinutes);
-                  const live = occ && occ.status === "checked_in" && isToday && occ.lightsOffAt !== null && occ.lightsOffAt > now && bookingStart(occ) <= now;
-                  return (
-                    <button key={`${h}-${c.id}`} disabled={!!occ} onClick={() => openForm(c.id, h * 60, selectedISO)}
-                      className={`rounded-[10px] px-2 py-2 text-sm ${live ? "bg-pb-amber font-bold text-pb-amber-ink" : occ ? "bg-pb-surface2 font-medium text-pb-dim" : past ? "bg-pb-surface text-pb-dim/60 hover:bg-pb-surface2" : "bg-pb-surface font-medium hover:bg-pb-amber/25"}`}>
-                      {occ ? occ.customerName : "Free"}
-                    </button>
-                  );
-                })}
-              </Fragment>
-            );
-          })}
-        </div>
-        <p className="mt-1 text-xs text-pb-dim">Tap a free slot to create a booking for it.</p>
       </section>
 
       {/* Bookings — Doc §4: court × time schedule grid by default, list one tap away */}
@@ -1146,24 +1034,81 @@ export default function Dashboard() {
         )}
       </section>
 
-      {/* Today's numbers — Doc §6 */}
-      <section className="mt-8">
-        <h2 className="mb-2 font-extrabold uppercase tracking-wide">{isToday ? "Today's numbers" : "Day numbers"}</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            ["Collected (court fees)", fmtRs(collectedToday)],
-            ["Outstanding (court fees)", fmtRs(outstandingToday)],
-            ["Light hours", lightHours.toFixed(1)],
-            ["Electricity cost", `Rs ${Math.round(actualCost).toLocaleString()}`],
-            ["Saved vs lights-on-all-day", `Rs ${Math.round(saved).toLocaleString()}`],
-            ["Utilization", `${utilization}%`],
-            ["Bookings", String(counts.total)],
-            ["Completed / no-shows", `${counts.completed} / ${counts.noShow}`],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-[10px] border border-pb-border bg-pb-surface p-4"><p className="text-xs font-semibold uppercase text-pb-dim">{label}</p><p className="mt-1 text-xl font-black">{value}</p></div>
-          ))}
+      {/* Court cards — Doc §4 */}
+      <section id="courts" className="mt-6 grid scroll-mt-4 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {courts.map((court) => {
+          const active = isToday ? activeForCourt(court.id) : undefined;
+          const lightsOn = isToday && lightsOnFor(court, now);
+          const pending = active !== undefined && bookingStart(active) > now;
+          const changeover = isToday && !active && !court.manualOverride ? changeoverForCourt(court.id, now) : undefined;
+          return (
+            <div key={court.id} id={`court-card-${court.id}`} className={`rounded-[10px] border p-4 ${lightsOn ? "lit-glow border-pb-amber bg-pb-amber text-pb-amber-ink" : "border-pb-border bg-pb-surface"} ${focusedCourtId === court.id ? "ring-2 ring-pb-amber" : ""}`}>
+              <div className="flex items-center justify-between">
+                <h2 className="font-extrabold uppercase tracking-wide">{court.name}</h2>
+                <span className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-bold ${lightsOn ? "bg-pb-amber-ink text-pb-amber" : "bg-pb-surface2 text-pb-dim"}`}>
+                  {lightsOn && <span className="pulse-dot inline-block h-2 w-2 rounded-full bg-pb-amber" />}
+                  {lightsOn ? "Lights ON" : "Lights off"}
+                </span>
+              </div>
+              {active ? (
+                <div className="mt-3">
+                  <p className="text-sm font-semibold">{active.customerName} · {active.customerPhone}</p>
+                  <p className="font-black leading-none text-4xl tabular-nums">{countdown(pending ? bookingStart(active) : active.lightsOffAt, now)}</p>
+                  {pending ? (
+                    <p className="mt-1 text-xs text-pb-dim">Checked in · lights on at {formatMinutesOfDay(active.startMinutes)} · Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
+                  ) : (
+                    <p className={`mt-1 text-xs ${lightsOn ? "" : "text-pb-dim"} opacity-80`}>Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
+                  )}
+                </div>
+              ) : changeover ? (
+                <div className="mt-3">
+                  <p className="text-sm font-semibold">{changeover.prev.customerName} finished · next {changeover.next.customerName} at {formatMinutesOfDay(changeover.next.startMinutes)}</p>
+                  <p className="font-black leading-none text-4xl tabular-nums">{countdown(changeover.until, now)}</p>
+                  <p className={`mt-1 text-xs ${lightsOn ? "" : "text-pb-dim"} opacity-80`}>Changeover · lights off at {changeover.until.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} if {changeover.next.customerName} doesn&apos;t check in</p>
+                </div>
+              ) : (
+                <p className={`mt-3 text-sm ${lightsOn ? "" : "text-pb-dim"}`}>
+                  {!isToday ? "Sessions show live on the day" : lightsOn && court.manualOverride ? "Manual override — lights forced on by staff" : "No active session"}{court.manualOverride && isToday ? " · Manual override active" : ""}
+                </p>
+              )}
+              {isToday && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button onClick={() => handleToggleLights(court)} className={lightsOn ? "rounded-[10px] bg-pb-amber-ink px-3 py-1.5 text-sm font-bold text-pb-amber" : btnCls}>{lightsOn ? "Turn off manually" : "Turn on manually"}</button>
+                  {court.manualOverride && <button onClick={() => handleBackToAuto(court)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Back to auto</button>}
+                  {active && <><button onClick={() => handleExtend(active, 30)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Extend 30m</button><button onClick={() => handleExtend(active, 60)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Extend 1h</button><span className="flex items-center gap-1 text-sm font-bold" title="Free minutes when the delay was the club's fault — no charge, fee unchanged">Club delay {[5, 10, 15].map((mins) => <button key={mins} onClick={() => handleClubDelay(active, mins)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-2 py-1.5 text-sm font-bold" : btnCls}>+{mins}m</button>)}</span><button onClick={() => handleEndSession(active)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>End session</button></>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </section>
+
+      {/* Free slots grid — Doc §4 */}
+      <section className="mt-8 overflow-x-auto">
+        <h2 className="mb-2 font-extrabold uppercase tracking-wide">Free slots</h2>
+        <div className="grid min-w-[560px] gap-1" style={{ gridTemplateColumns: `84px repeat(${courts.length}, 1fr)` }}>
+          <div className="px-2 py-1 text-xs font-bold text-pb-dim">Time</div>
+          {courts.map((c) => <div key={c.id} className="px-2 py-1 text-center text-xs font-bold text-pb-dim">{c.name}</div>)}
+          {hours.map((h) => {
+            const past = isToday && (h + 1) * 60 <= now.getHours() * 60 + now.getMinutes();
+            return (
+              <Fragment key={h}>
+                <div className="px-2 py-2 text-sm font-semibold">{formatHour(h)}</div>
+                {courts.map((c) => {
+                  const occ = bookings.find((b) => b.courtId === c.id && (b.status === "booked" || b.status === "checked_in") && b.startMinutes < (h + 1) * 60 && h * 60 < b.startMinutes + b.durationMinutes);
+                  const live = occ && occ.status === "checked_in" && isToday && occ.lightsOffAt !== null && occ.lightsOffAt > now && bookingStart(occ) <= now;
+                  return (
+                    <button key={`${h}-${c.id}`} disabled={!!occ} onClick={() => openForm(c.id, h * 60, selectedISO)}
+                      className={`rounded-[10px] px-2 py-2 text-sm ${live ? "bg-pb-amber font-bold text-pb-amber-ink" : occ ? "bg-pb-surface2 font-medium text-pb-dim" : past ? "bg-pb-surface text-pb-dim/60 hover:bg-pb-surface2" : "bg-pb-surface font-medium hover:bg-pb-amber/25"}`}>
+                      {occ ? occ.customerName : "Free"}
+                    </button>
+                  );
+                })}
+              </Fragment>
+            );
+          })}
         </div>
-        <p className="mt-2 text-xs text-pb-dim">Savings assume lights would otherwise stay on for all opening hours ({settings.openingHour}–{settings.closingHour}) on every court, at {settings.lightingPowerKw} kW × Rs {settings.electricityPricePerUnit}/unit. Light hours are summed from the day&apos;s light log.</p>
+        <p className="mt-1 text-xs text-pb-dim">Tap a free slot to create a booking for it.</p>
       </section>
 
       {/* Bottom panels — KICKS-style: performance trend + day state */}
@@ -1218,6 +1163,26 @@ export default function Dashboard() {
             <p className="mt-1.5 text-xs text-pb-dim">{collectedPct}% of the day&apos;s court fees collected (cancelled and no-show bookings excluded).</p>
           </div>
         </div>
+      </section>
+
+      {/* Today's numbers — Doc §6 */}
+      <section className="mt-8">
+        <h2 className="mb-2 font-extrabold uppercase tracking-wide">{isToday ? "Today's numbers" : "Day numbers"}</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ["Collected (court fees)", fmtRs(collectedToday)],
+            ["Outstanding (court fees)", fmtRs(outstandingToday)],
+            ["Light hours", lightHours.toFixed(1)],
+            ["Electricity cost", `Rs ${Math.round(actualCost).toLocaleString()}`],
+            ["Saved vs lights-on-all-day", `Rs ${Math.round(saved).toLocaleString()}`],
+            ["Utilization", `${utilization}%`],
+            ["Bookings", String(counts.total)],
+            ["Completed / no-shows", `${counts.completed} / ${counts.noShow}`],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-[10px] border border-pb-border bg-pb-surface p-4"><p className="text-xs font-semibold uppercase text-pb-dim">{label}</p><p className="mt-1 text-xl font-black">{value}</p></div>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-pb-dim">Savings assume lights would otherwise stay on for all opening hours ({settings.openingHour}–{settings.closingHour}) on every court, at {settings.lightingPowerKw} kW × Rs {settings.electricityPricePerUnit}/unit. Light hours are summed from the day&apos;s light log.</p>
       </section>
 
       {/* Light log + settings */}
