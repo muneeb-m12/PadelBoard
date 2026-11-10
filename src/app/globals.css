@@ -1,40 +1,55 @@
 @import "tailwindcss";
 
 /* PadelBoard design system — ported from the hosted demo (theme.css):
-   Archivo, green paper background, amber for lit courts. */
+   Archivo, soft green-grey panels on a deep green ground, a green-led
+   palette, and amber reserved for live tags and money owed. */
 /* Dark is the default theme (padel is a night business); the header toggle
    switches to light and the choice is remembered. */
 :root,
 :root[data-theme="dark"] {
-  --bg: #0c120d;
-  --surface: #141b15;
-  --surface2: #1a241b;
-  --text: #e9f1e9;
-  --dim: #93a89a;
-  --border: #2a3a2d;
-  --amber: #ffc21f;
-  --amber-ink: #241a00;
-  --radius: 10px;
+  --bg: #0a0f0a;
+  --surface: #10160f;
+  --surface2: #141d15;
+  --chrome: #0c120c;
+  --text: #e9f2e9;
+  --dim: #8ba18d;
+  --border: #1f2b1f;
+  --amber: #fbbf24;
+  --amber-ink: #231a00;
+  --accent: #22c55e;
+  --booked: #12291a;
+  --booked-text: #d1fae5;
+  --radius: 14px;
 }
 
 :root[data-theme="light"] {
-  --bg: #e9efe9;
-  --surface: #f7faf6;
+  --bg: #f3f6f3;
+  --surface: #ffffff;
   --surface2: #eef4ee;
-  --text: #101a14;
-  --dim: #5c6f63;
-  --border: #cfdccf;
+  --chrome: #ffffff;
+  --text: #152219;
+  --dim: #6d7f70;
+  --border: #e2eae2;
+  --amber: #f59e0b;
+  --amber-ink: #231a00;
+  --accent: #16a34a;
+  --booked: #e9f7ee;
+  --booked-text: #14532d;
 }
 
 @theme inline {
   --color-pb-bg: var(--bg);
   --color-pb-surface: var(--surface);
   --color-pb-surface2: var(--surface2);
+  --color-pb-chrome: var(--chrome);
   --color-pb-text: var(--text);
   --color-pb-dim: var(--dim);
   --color-pb-border: var(--border);
   --color-pb-amber: var(--amber);
   --color-pb-amber-ink: var(--amber-ink);
+  --color-pb-accent: var(--accent);
+  --color-pb-booked: var(--booked);
+  --color-pb-booked-text: var(--booked-text);
   --font-sans: var(--font-archivo);
 }
 
@@ -65,9 +80,38 @@ input:disabled {
   cursor: not-allowed;
 }
 
-/* A lit court glows. */
+/* Panels float on the page: a soft border (the pb-border token) plus this
+   very subtle shadow. */
+.panel-shadow {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 6px 18px rgba(0, 0, 0, 0.32);
+}
+
+:root[data-theme="light"] .panel-shadow {
+  box-shadow: 0 1px 3px rgba(20, 40, 25, 0.06), 0 6px 18px rgba(20, 40, 25, 0.05);
+}
+
+/* The primary green action carries a soft green glow, like the mockup CTA. */
+.accent-shadow {
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.35);
+}
+
+:root[data-theme="light"] .accent-shadow {
+  box-shadow: 0 4px 16px rgba(22, 163, 74, 0.3);
+}
+
+/* A court in play on the schedule grid: rich green gradient, green-led glow. */
+.live-block {
+  background-image: linear-gradient(135deg, #15803d, #22c55e);
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.45), 0 0 42px rgba(251, 191, 36, 0.18);
+}
+
+:root[data-theme="light"] .live-block {
+  box-shadow: 0 4px 16px rgba(22, 163, 74, 0.35);
+}
+
+/* A lit court card glows green. */
 .lit-glow {
-  box-shadow: 0 0 0 2px var(--amber), 0 12px 44px -10px rgba(255, 194, 31, 0.55);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.5), 0 0 22px rgba(34, 197, 94, 0.28), 0 12px 34px -12px rgba(34, 197, 94, 0.45);
 }
 
 .pulse-dot {

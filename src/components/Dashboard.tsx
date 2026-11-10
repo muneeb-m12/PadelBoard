@@ -138,7 +138,7 @@ function countdown(offAt: Date | null, now: Date): string {
 }
 
 const inputCls = "w-full rounded-[10px] border border-pb-border bg-pb-surface px-3 py-2 text-sm text-pb-text";
-const btnCls = "rounded-[10px] border border-pb-border bg-pb-surface px-3 py-1.5 text-sm font-semibold hover:bg-pb-surface2";
+const btnCls = "rounded-full border border-pb-border bg-pb-surface px-3 py-1.5 text-sm font-medium hover:bg-pb-surface2";
 const chipCls = "rounded-full border border-pb-border bg-pb-surface2 px-2.5 py-0.5 text-xs font-semibold";
 
 export default function Dashboard() {
@@ -637,12 +637,12 @@ export default function Dashboard() {
   const gridBlockState = (b: Booking): { cls: string; note: string; live: boolean; pending: boolean; pay: ReturnType<typeof paymentSummary> } => {
     const pay = paymentSummary(b);
     const live = isToday && b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > now && bookingStart(b) <= now;
-    if (live) return { cls: "lit-glow border-emerald-300 bg-emerald-500 text-white", note: "", live, pending: false, pay };
+    if (live) return { cls: "live-block border-transparent text-white", note: "", live, pending: false, pay };
     const pending = isToday && b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > now && bookingStart(b) > now;
     if (pending) return { cls: "border-pb-amber bg-pb-surface2 text-pb-text", note: "", live, pending, pay };
     if (b.status === "no_show") return { cls: "border-red-500/60 bg-red-500/10 text-pb-dim", note: "no-show", live, pending, pay };
     if (b.status === "completed" || b.status === "checked_in") return { cls: "border-pb-border bg-pb-surface2 text-pb-dim", note: "", live, pending, pay };
-    return { cls: "border-emerald-600/50 bg-emerald-500/10 text-pb-text", note: "", live, pending, pay };
+    return { cls: "border-pb-accent/60 bg-pb-booked text-pb-booked-text", note: "", live, pending, pay };
   };
 
   const hours = Array.from({ length: settings.closingHour - settings.openingHour }, (_, i) => settings.openingHour + i);
@@ -706,14 +706,14 @@ export default function Dashboard() {
       {/* Sidebar — KICKS-style: wordmark, icon nav, day stats. Icon rail on
           medium screens, full labels + stats on xl; hidden on phones, where
           the header below carries the branding and actions. */}
-      <aside className="sticky top-0 hidden h-screen w-[72px] shrink-0 flex-col border-r border-pb-border bg-pb-surface md:flex xl:w-60">
+      <aside className="sticky top-0 hidden h-screen w-[72px] shrink-0 flex-col border-r border-pb-border bg-pb-chrome md:flex xl:w-60">
         <div className="px-3 py-5 text-center xl:px-5 xl:text-left">
-          <p className="text-xl font-black uppercase leading-none tracking-tight">Padel<span className="text-pb-amber">Board</span></p>
+          <p className="text-xl font-extrabold uppercase leading-none tracking-wider">Padel<span className="text-pb-accent">Board</span></p>
           <p className="mt-1 hidden text-xs text-pb-dim xl:block">Demo Padel Club</p>
         </div>
         <nav className="flex flex-col gap-1 px-2 xl:px-3">
           {navItems.map((item) => (
-            <button key={item.label} onClick={item.action} title={item.label} className="flex items-center justify-center gap-3 rounded-[10px] px-3 py-2 text-sm font-semibold hover:bg-pb-surface2 xl:justify-start">
+            <button key={item.label} onClick={item.action} title={item.label} className={`flex items-center justify-center gap-3 rounded-[10px] px-3 py-2 text-sm xl:justify-start ${item.label === "Dashboard" ? "bg-pb-booked font-bold text-pb-accent" : "font-medium hover:bg-pb-surface2"}`}>
               <span aria-hidden className="w-5 text-center text-base leading-none">{item.glyph}</span>
               <span className="hidden xl:inline">{item.label}</span>
             </button>
@@ -721,7 +721,7 @@ export default function Dashboard() {
         </nav>
         <div className="mt-auto px-3 pb-6">
           <div className="text-center xl:hidden">
-            <p className="text-2xl font-black tabular-nums">{courtsLive}</p>
+            <p className="text-2xl font-extrabold tabular-nums">{courtsLive}</p>
             <p className="text-[10px] font-semibold uppercase text-pb-dim">courts live</p>
           </div>
           <div className="hidden space-y-3 xl:block">
@@ -735,24 +735,24 @@ export default function Dashboard() {
             ].map(([label, value]) => (
               <div key={label} className="flex items-baseline justify-between gap-2">
                 <span className="text-xs font-semibold text-pb-dim">{label}</span>
-                <span className="text-sm font-black tabular-nums">{value}</span>
+                <span className="text-sm font-bold tabular-nums">{value}</span>
               </div>
             ))}
           </div>
         </div>
       </aside>
 
-    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">
+    <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
       <header className="flex flex-wrap items-center gap-2">
         {/* Compact brand for phones — the sidebar carries the branding on md+ screens */}
-        <span className="text-lg font-black uppercase leading-none tracking-tight md:hidden">Padel<span className="text-pb-amber">Board</span><span className="ml-1.5 text-xs font-semibold normal-case tracking-normal text-pb-dim">· Demo Padel Club</span></span>
+        <span className="text-lg font-extrabold uppercase leading-none tracking-wide md:hidden">Padel<span className="text-pb-accent">Board</span><span className="ml-1.5 text-xs font-semibold normal-case tracking-normal text-pb-dim">· Demo Padel Club</span></span>
         <button onClick={() => setSelectedISO(isoAddDays(selectedISO, -1))} className={btnCls}>← Prev day</button>
-        <span className="px-1 text-lg font-extrabold">{dateLabel}</span>
+        <span className="px-1 text-[17px] font-semibold">{dateLabel}</span>
         <button onClick={() => setSelectedISO(isoAddDays(selectedISO, 1))} className={btnCls}>Next day →</button>
-        <input type="date" value={selectedISO} onChange={(e) => e.target.value && setSelectedISO(e.target.value)} className="rounded-[10px] border border-pb-border bg-pb-surface px-2 py-1.5 text-sm" />
+        <input type="date" value={selectedISO} onChange={(e) => e.target.value && setSelectedISO(e.target.value)} className="rounded-full border border-pb-border bg-pb-surface px-3 py-1.5 text-sm" />
         {!isToday && <button onClick={() => setSelectedISO(todayISO)} className={btnCls}>Back to today</button>}
         <span className="flex items-center gap-2 text-sm font-semibold text-pb-dim">
-          <span className="pulse-dot inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
+          <span className="pulse-dot inline-block h-2.5 w-2.5 rounded-full bg-pb-accent" />
           Live · {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
         </span>
         <div className="ml-auto flex gap-2">
@@ -765,9 +765,9 @@ export default function Dashboard() {
               )}
             </button>
             {showNotifications && (
-              <div className="absolute right-0 top-full z-50 mt-2 max-h-[70vh] w-[min(92vw,380px)] overflow-y-auto rounded-[10px] border border-pb-border bg-pb-surface p-3 text-left shadow-2xl">
+              <div className="absolute right-0 top-full z-50 mt-2 max-h-[70vh] w-[min(92vw,380px)] overflow-y-auto rounded-[14px] border border-pb-border bg-pb-surface p-3 text-left shadow-2xl">
                 <p className="flex items-baseline justify-between px-1 pb-2">
-                  <span className="text-sm font-extrabold uppercase tracking-wide">Notifications</span>
+                  <span className="text-sm font-bold">Notifications</span>
                   {badgeCount > 0 && <span className="text-xs font-semibold text-pb-dim">{alerts.length} active{unreadNotices > 0 ? ` · ${unreadNotices} new` : ""}</span>}
                 </p>
                 {alerts.length === 0 && notices.length === 0 && (
@@ -798,7 +798,7 @@ export default function Dashboard() {
           </div>
           <button onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))} className={btnCls} title="Switch theme">{theme === "dark" ? "☀ Light" : "☾ Dark"}</button>
           <button onClick={() => setShowSettings((s) => !s)} className={btnCls}>Club settings</button>
-          <button onClick={() => openForm()} className="rounded-[10px] bg-pb-amber px-4 py-2 text-sm font-extrabold text-pb-amber-ink">+ Add booking</button>
+          <button onClick={() => openForm()} className="accent-shadow rounded-[10px] bg-pb-accent px-4 py-2 text-sm font-bold text-white">+ Add booking</button>
         </div>
       </header>
 
@@ -812,14 +812,14 @@ export default function Dashboard() {
           { label: "Outstanding", value: fmtRs(outstandingToday), amber: true },
           { label: isToday ? "Lights saved today" : "Lights saved", value: `Rs ${Math.round(saved).toLocaleString()}`, amber: false },
         ].map((chip) => (
-          <div key={chip.label} className="rounded-[10px] border border-pb-border bg-pb-surface px-3 py-2">
+          <div key={chip.label} className="panel-shadow rounded-xl border border-pb-border bg-pb-surface px-3.5 py-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-pb-dim">{chip.label} </span>
-            <span className={`text-sm font-black tabular-nums ${chip.amber ? "text-pb-amber" : ""}`}>{chip.value}</span>
+            <span className={`text-[15px] font-extrabold tabular-nums ${chip.amber ? "text-pb-amber" : ""}`}>{chip.value}</span>
           </div>
         ))}
-        <div className="rounded-[10px] border border-pb-border bg-pb-surface px-3 py-2">
+        <div className="panel-shadow rounded-xl border border-pb-border bg-pb-surface px-3.5 py-2">
           <span className="text-[10px] font-bold uppercase tracking-wider text-pb-dim">Next </span>
-          <span className="text-sm font-black">{nextBooking ? <>{nextBooking.customerName} · {courts.find((c) => c.id === nextBooking.courtId)?.name} · {formatMinutesOfDay(nextBooking.startMinutes)}</> : "No upcoming bookings"}</span>
+          <span className="text-[15px] font-extrabold">{nextBooking ? <>{nextBooking.customerName} · {courts.find((c) => c.id === nextBooking.courtId)?.name} · {formatMinutesOfDay(nextBooking.startMinutes)}</> : "No upcoming bookings"}</span>
         </div>
       </section>
 
@@ -847,36 +847,36 @@ export default function Dashboard() {
                     : "Free";
           return (
             <button key={court.id} onClick={() => { setFocusedCourtId(court.id); scrollToId(`court-card-${court.id}`); }}
-              className={`min-w-[176px] flex-1 rounded-[10px] border p-3 text-left ${on ? "border-pb-amber bg-pb-surface" : "border-pb-border bg-pb-surface"} hover:bg-pb-surface2`}>
+              className={`panel-shadow min-w-[176px] flex-1 rounded-xl border px-3.5 py-2.5 text-left ${on ? "border-pb-accent/50 bg-pb-accent/[0.06]" : "border-pb-border bg-pb-surface"} hover:bg-pb-surface2`}>
               <span className="flex items-center justify-between gap-2">
-                <span className="font-extrabold uppercase tracking-wide">{court.name}</span>
-                <span className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${on ? "pulse-dot bg-pb-amber" : "bg-pb-dim/50"}`} />
+                <span className="text-[13px] font-semibold uppercase tracking-wider">{court.name}</span>
+                <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${on ? "pulse-dot bg-pb-accent" : "bg-pb-dim/40"}`} />
               </span>
-              <span className="mt-1 block text-xs font-semibold text-pb-dim">{status}</span>
+              <span className="mt-1 block text-xs font-medium text-pb-dim">{status}</span>
             </button>
           );
         })}
       </section>
 
       {/* Bookings — Doc §4: court × time schedule grid by default, list one tap away */}
-      <section id="bookings" className="mt-8 scroll-mt-4">
+      <section id="bookings" className="mt-6 scroll-mt-4">
         <div className="mb-2 flex flex-wrap items-center gap-2">
-          <h2 className="font-extrabold uppercase tracking-wide">Bookings — {dateLabel}</h2>
-          <span className="ml-auto flex overflow-hidden rounded-[10px] border border-pb-border" role="group" aria-label="Bookings view">
-            <button onClick={() => setBookingsView("grid")} aria-pressed={bookingsView === "grid"} className={bookingsView === "grid" ? "bg-pb-amber px-3 py-1.5 text-sm font-bold text-pb-amber-ink" : "bg-pb-surface px-3 py-1.5 text-sm font-semibold hover:bg-pb-surface2"}>▦ Grid</button>
-            <button onClick={() => setBookingsView("list")} aria-pressed={bookingsView === "list"} className={bookingsView === "list" ? "bg-pb-amber px-3 py-1.5 text-sm font-bold text-pb-amber-ink" : "bg-pb-surface px-3 py-1.5 text-sm font-semibold hover:bg-pb-surface2"}>☰ List</button>
+          <h2 className="text-[17px] font-semibold">Bookings — {dateLabel}</h2>
+          <span className="ml-auto flex gap-0.5 rounded-full border border-pb-border bg-pb-surface p-0.5" role="group" aria-label="Bookings view">
+            <button onClick={() => setBookingsView("grid")} aria-pressed={bookingsView === "grid"} className={bookingsView === "grid" ? "rounded-full bg-pb-accent px-3 py-1 text-sm font-bold text-white" : "rounded-full px-3 py-1 text-sm font-medium text-pb-dim hover:bg-pb-surface2"}>▦ Grid</button>
+            <button onClick={() => setBookingsView("list")} aria-pressed={bookingsView === "list"} className={bookingsView === "list" ? "rounded-full bg-pb-accent px-3 py-1 text-sm font-bold text-white" : "rounded-full px-3 py-1 text-sm font-medium text-pb-dim hover:bg-pb-surface2"}>☰ List</button>
           </span>
         </div>
         {bookingsView === "grid" ? (
           <>
-            <div className="overflow-x-auto rounded-[10px] border border-pb-border bg-pb-surface">
+            <div className="panel-shadow overflow-x-auto rounded-[14px] border border-pb-border bg-pb-surface">
               <div style={{ minWidth: `${56 + courts.length * 172}px` }}>
                 {/* Court header row */}
                 <div className="flex border-b border-pb-border">
                   <div className="shrink-0" style={{ width: 56 }} />
                   {courts.map((c) => (
-                    <div key={c.id} className="flex-1 border-l border-pb-border px-2 py-2 text-center">
-                      <p className="text-sm font-extrabold uppercase tracking-wide">{c.name}</p>
+                    <div key={c.id} className="flex-1 border-l border-pb-border px-2 py-3 text-center">
+                      <p className="text-sm font-semibold">{c.name}</p>
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-pb-dim">LED · {settings.lightingPowerKw} kW</p>
                     </div>
                   ))}
@@ -885,18 +885,18 @@ export default function Dashboard() {
                 <div className="relative flex" style={{ height: gridHeightPx }}>
                   <div className="relative shrink-0" style={{ width: 56 }}>
                     {gridHourMarks.map((t) => (
-                      <span key={t} className="absolute right-2 whitespace-nowrap text-[11px] font-semibold text-pb-dim" style={{ top: (t - gridStartMin) * GRID_PX_PER_MIN, transform: t === gridEndMin ? "translateY(-100%)" : "translateY(-50%)" }}>{formatMinutesOfDay(t)}</span>
+                      <span key={t} className="absolute right-2 whitespace-nowrap text-[11px] font-medium text-pb-dim" style={{ top: (t - gridStartMin) * GRID_PX_PER_MIN, transform: t === gridEndMin ? "translateY(-100%)" : "translateY(-50%)" }}>{formatMinutesOfDay(t)}</span>
                     ))}
                     {showNowLine && (
                       <span className="absolute right-0.5 z-30 whitespace-nowrap rounded-full bg-red-500 px-1.5 py-px text-[10px] font-black text-white" style={{ top: (nowMinToday - gridStartMin) * GRID_PX_PER_MIN, transform: "translateY(-50%)" }}>{now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
                     )}
                   </div>
-                  <div className="relative flex flex-1" style={{ backgroundImage: "linear-gradient(to bottom, var(--border) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--border) 40%, transparent) 1px, transparent 1px)", backgroundSize: `100% ${60 * GRID_PX_PER_MIN}px, 100% ${30 * GRID_PX_PER_MIN}px` }}>
+                  <div className="relative flex flex-1" style={{ backgroundImage: "linear-gradient(to bottom, var(--border) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--border) 30%, transparent) 1px, transparent 1px)", backgroundSize: `100% ${60 * GRID_PX_PER_MIN}px, 100% ${30 * GRID_PX_PER_MIN}px` }}>
                     {courts.map((c) => {
                       const co = isToday && !c.manualOverride ? changeoverForCourt(c.id, now) : undefined;
                       const coEndMin = co && co.prev.lightsOffAt ? co.prev.lightsOffAt.getHours() * 60 + co.prev.lightsOffAt.getMinutes() : 0;
                       return (
-                        <div key={c.id} title="Tap an empty time to create a booking for it" className="relative flex-1 border-l border-pb-border"
+                        <div key={c.id} title="Tap an empty time to create a booking for it" className="relative flex-1 border-l border-pb-border/60"
                           onClick={(e) => {
                             const rect = e.currentTarget.getBoundingClientRect();
                             const mins = gridStartMin + Math.floor(((e.clientY - rect.top) / GRID_PX_PER_MIN) / 30) * 30;
@@ -908,9 +908,9 @@ export default function Dashboard() {
                             return (
                               <button key={b.id} onClick={(e) => { e.stopPropagation(); handleGridBlockClick(b); }}
                                 title={`${b.customerName} · ${formatMinutesOfDay(b.startMinutes)}–${formatMinutesOfDay(b.startMinutes + b.durationMinutes)} — tap for details and payments`}
-                                className={`absolute inset-x-1 z-10 overflow-hidden rounded-md border px-1.5 py-1 text-left ${st.cls}`}
+                                className={`absolute inset-x-1 z-10 overflow-hidden rounded-[10px] border px-2 py-1.5 text-left ${st.cls}`}
                                 style={{ top: (b.startMinutes - gridStartMin) * GRID_PX_PER_MIN + 1, height }}>
-                                <span className="block truncate text-xs font-bold leading-tight">{b.customerName}</span>
+                                <span className="block truncate text-[12.5px] font-bold leading-tight">{b.customerName}</span>
                                 <span className="block truncate text-[10px] leading-tight opacity-80">{formatMinutesOfDay(b.startMinutes)} – {formatMinutesOfDay(b.startMinutes + b.durationMinutes)}{st.note ? ` · ${st.note}` : ""}</span>
                                 {st.live && height >= 46 && <span className="mt-0.5 inline-block rounded-full bg-pb-amber px-1.5 py-px text-[9px] font-black text-pb-amber-ink">● LIVE · LIGHTS ON</span>}
                                 {st.pending && height >= 46 && <span className="mt-0.5 inline-block rounded-full bg-pb-amber px-1.5 py-px text-[9px] font-black text-pb-amber-ink">LIGHTS ON AT {formatMinutesOfDay(b.startMinutes)}</span>}
@@ -934,8 +934,8 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-pb-dim">
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500" /> Live</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm border border-emerald-600/50 bg-emerald-500/15" /> Booked</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-pb-accent" /> Live</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm border border-pb-accent/60 bg-pb-booked" /> Booked</span>
               <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-pb-surface2" /> Completed</span>
               <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500/50" /> No-show</span>
               <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundImage: "repeating-linear-gradient(45deg, var(--amber) 0 3px, rgba(0,0,0,0.5) 3px 6px)" }} /> Changeover</span>
@@ -943,7 +943,7 @@ export default function Dashboard() {
             </div>
           </>
         ) : (
-        <div className="divide-y divide-pb-border rounded-[10px] border border-pb-border bg-pb-surface">
+        <div className="panel-shadow divide-y divide-pb-border rounded-[14px] border border-pb-border bg-pb-surface">
           {bookings.length === 0 && <p className="p-4 text-sm text-pb-dim">No bookings for this day yet.</p>}
           {[...bookings].sort((a, b) => a.startMinutes - b.startMinutes).map((b) => {
             const chip = statusChip(b);
@@ -956,7 +956,7 @@ export default function Dashboard() {
             const expanded = expandedBookingId === b.id;
             const courtName = courts.find((c) => c.id === b.courtId)?.name ?? "Court";
             return (
-              <div key={b.id} id={`booking-row-${b.id}`} className={`scroll-mt-4 p-3 text-sm ${focusedBookingId === b.id ? "bg-pb-amber/10" : ""}`}>
+              <div key={b.id} id={`booking-row-${b.id}`} className={`scroll-mt-4 p-3 text-sm ${focusedBookingId === b.id ? "bg-pb-accent/10" : ""}`}>
               <div className="flex flex-wrap items-center gap-3">
                 <span className="font-mono font-semibold">{formatMinutesOfDay(b.startMinutes)}–{formatMinutesOfDay(b.startMinutes + b.durationMinutes)}</span>
                 <span className="text-pb-dim">({formatDuration(b.durationMinutes)})</span>
@@ -976,7 +976,7 @@ export default function Dashboard() {
                   {b.status !== "cancelled" && <button onClick={() => setExpandedBookingId(expanded ? null : b.id)} className={btnCls}>{expanded ? "Hide payments" : "Payments"}</button>}
                   {b.status === "booked" && (
                     <>
-                      <button disabled={!check.ok} title={check.ok ? "" : check.message} onClick={() => handleCheckIn(b)} className="rounded-[10px] bg-pb-amber px-3 py-1 font-bold text-pb-amber-ink disabled:cursor-not-allowed disabled:opacity-40">Check in</button>
+                      <button disabled={!check.ok} title={check.ok ? "" : check.message} onClick={() => handleCheckIn(b)} className="rounded-full bg-pb-accent px-3.5 py-1 font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Check in</button>
                       {!check.ok && check.message && <span className="text-xs text-pb-dim">{check.message}</span>}
                       <button onClick={() => handleReleaseNoShow(b)} className={btnCls}>Release slot</button>
                       <button onClick={() => handleCancel(b)} className={btnCls}>Cancel</button>
@@ -993,7 +993,7 @@ export default function Dashboard() {
                 </span>
               </div>
               {expanded && b.status !== "cancelled" && (
-                <div className="mt-3 rounded-[10px] border border-pb-border bg-pb-surface2/60 p-3">
+                <div className="mt-3 rounded-xl border border-pb-border bg-pb-surface2/60 p-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-extrabold uppercase tracking-wide text-xs">{b.splitPayment ? "Split payment" : "Payment"} — {courtName}</span>
                     <span className="text-xs text-pb-dim">Total {fmtRs(b.totalAmount)} · Collected {fmtRs(pay.collected)} · Outstanding {fmtRs(pay.outstanding)}</span>
@@ -1020,7 +1020,7 @@ export default function Dashboard() {
                               <a href={whatsappReminderLink(b, sh, courtName)} target="_blank" rel="noreferrer" className={btnCls}>WhatsApp reminder</a>
                             </>
                           )}
-                          <button onClick={() => handleToggleSharePaid(b, sh)} className={sh.paid ? btnCls : "rounded-[10px] bg-pb-amber px-3 py-1 text-xs font-bold text-pb-amber-ink"}>{sh.paid ? "Undo paid" : "Mark paid"}</button>
+                          <button onClick={() => handleToggleSharePaid(b, sh)} className={sh.paid ? btnCls : "rounded-full bg-pb-accent px-3 py-1 text-xs font-bold text-white"}>{sh.paid ? "Undo paid" : "Mark paid"}</button>
                         </span>
                       </div>
                     ))}
@@ -1042,11 +1042,11 @@ export default function Dashboard() {
           const pending = active !== undefined && bookingStart(active) > now;
           const changeover = isToday && !active && !court.manualOverride ? changeoverForCourt(court.id, now) : undefined;
           return (
-            <div key={court.id} id={`court-card-${court.id}`} className={`rounded-[10px] border p-4 ${lightsOn ? "lit-glow border-pb-amber bg-pb-amber text-pb-amber-ink" : "border-pb-border bg-pb-surface"} ${focusedCourtId === court.id ? "ring-2 ring-pb-amber" : ""}`}>
+            <div key={court.id} id={`court-card-${court.id}`} className={`panel-shadow rounded-[14px] border p-5 ${lightsOn ? "lit-glow border-pb-accent/60 bg-pb-accent/[0.07]" : "border-pb-border bg-pb-surface"} ${focusedCourtId === court.id ? "ring-2 ring-pb-accent/70" : ""}`}>
               <div className="flex items-center justify-between">
-                <h2 className="font-extrabold uppercase tracking-wide">{court.name}</h2>
-                <span className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-bold ${lightsOn ? "bg-pb-amber-ink text-pb-amber" : "bg-pb-surface2 text-pb-dim"}`}>
-                  {lightsOn && <span className="pulse-dot inline-block h-2 w-2 rounded-full bg-pb-amber" />}
+                <h2 className="text-[15px] font-semibold">{court.name}</h2>
+                <span className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-bold ${lightsOn ? "bg-pb-amber text-pb-amber-ink" : "bg-pb-surface2 text-pb-dim"}`}>
+                  {lightsOn && <span className="pulse-dot inline-block h-2 w-2 rounded-full bg-pb-amber-ink" />}
                   {lightsOn ? "Lights ON" : "Lights off"}
                 </span>
               </div>
@@ -1057,25 +1057,25 @@ export default function Dashboard() {
                   {pending ? (
                     <p className="mt-1 text-xs text-pb-dim">Checked in · lights on at {formatMinutesOfDay(active.startMinutes)} · Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
                   ) : (
-                    <p className={`mt-1 text-xs ${lightsOn ? "" : "text-pb-dim"} opacity-80`}>Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
+                    <p className="mt-1 text-xs text-pb-dim">Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
                   )}
                 </div>
               ) : changeover ? (
                 <div className="mt-3">
                   <p className="text-sm font-semibold">{changeover.prev.customerName} finished · next {changeover.next.customerName} at {formatMinutesOfDay(changeover.next.startMinutes)}</p>
                   <p className="font-black leading-none text-4xl tabular-nums">{countdown(changeover.until, now)}</p>
-                  <p className={`mt-1 text-xs ${lightsOn ? "" : "text-pb-dim"} opacity-80`}>Changeover · lights off at {changeover.until.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} if {changeover.next.customerName} doesn&apos;t check in</p>
+                  <p className="mt-1 text-xs text-pb-dim">Changeover · lights off at {changeover.until.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} if {changeover.next.customerName} doesn&apos;t check in</p>
                 </div>
               ) : (
-                <p className={`mt-3 text-sm ${lightsOn ? "" : "text-pb-dim"}`}>
+                <p className="mt-3 text-sm text-pb-dim">
                   {!isToday ? "Sessions show live on the day" : lightsOn && court.manualOverride ? "Manual override — lights forced on by staff" : "No active session"}{court.manualOverride && isToday ? " · Manual override active" : ""}
                 </p>
               )}
               {isToday && (
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <button onClick={() => handleToggleLights(court)} className={lightsOn ? "rounded-[10px] bg-pb-amber-ink px-3 py-1.5 text-sm font-bold text-pb-amber" : btnCls}>{lightsOn ? "Turn off manually" : "Turn on manually"}</button>
-                  {court.manualOverride && <button onClick={() => handleBackToAuto(court)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Back to auto</button>}
-                  {active && <><button onClick={() => handleExtend(active, 30)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Extend 30m</button><button onClick={() => handleExtend(active, 60)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Extend 1h</button><span className="flex items-center gap-1 text-sm font-bold" title="Free minutes when the delay was the club's fault — no charge, fee unchanged">Club delay {[5, 10, 15].map((mins) => <button key={mins} onClick={() => handleClubDelay(active, mins)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-2 py-1.5 text-sm font-bold" : btnCls}>+{mins}m</button>)}</span><button onClick={() => handleEndSession(active)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>End session</button></>}
+                  <button onClick={() => handleToggleLights(court)} className={lightsOn ? "rounded-full bg-pb-accent px-3.5 py-1.5 text-sm font-bold text-white" : btnCls}>{lightsOn ? "Turn off manually" : "Turn on manually"}</button>
+                  {court.manualOverride && <button onClick={() => handleBackToAuto(court)} className={btnCls}>Back to auto</button>}
+                  {active && <><button onClick={() => handleExtend(active, 30)} className={btnCls}>Extend 30m</button><button onClick={() => handleExtend(active, 60)} className={btnCls}>Extend 1h</button><span className="flex items-center gap-1 text-xs font-semibold text-pb-dim" title="Free minutes when the delay was the club's fault — no charge, fee unchanged">Club delay {[5, 10, 15].map((mins) => <button key={mins} onClick={() => handleClubDelay(active, mins)} className={btnCls}>+{mins}m</button>)}</span><button onClick={() => handleEndSession(active)} className={btnCls}>End session</button></>}
                 </div>
               )}
             </div>
@@ -1084,8 +1084,8 @@ export default function Dashboard() {
       </section>
 
       {/* Free slots grid — Doc §4 */}
-      <section className="mt-8 overflow-x-auto">
-        <h2 className="mb-2 font-extrabold uppercase tracking-wide">Free slots</h2>
+      <section className="mt-6 overflow-x-auto">
+        <h2 className="mb-2 text-[17px] font-semibold">Free slots</h2>
         <div className="grid min-w-[560px] gap-1" style={{ gridTemplateColumns: `84px repeat(${courts.length}, 1fr)` }}>
           <div className="px-2 py-1 text-xs font-bold text-pb-dim">Time</div>
           {courts.map((c) => <div key={c.id} className="px-2 py-1 text-center text-xs font-bold text-pb-dim">{c.name}</div>)}
@@ -1099,7 +1099,7 @@ export default function Dashboard() {
                   const live = occ && occ.status === "checked_in" && isToday && occ.lightsOffAt !== null && occ.lightsOffAt > now && bookingStart(occ) <= now;
                   return (
                     <button key={`${h}-${c.id}`} disabled={!!occ} onClick={() => openForm(c.id, h * 60, selectedISO)}
-                      className={`rounded-[10px] px-2 py-2 text-sm ${live ? "bg-pb-amber font-bold text-pb-amber-ink" : occ ? "bg-pb-surface2 font-medium text-pb-dim" : past ? "bg-pb-surface text-pb-dim/60 hover:bg-pb-surface2" : "bg-pb-surface font-medium hover:bg-pb-amber/25"}`}>
+                      className={`rounded-[10px] px-2 py-2 text-sm ${live ? "bg-pb-accent font-bold text-white" : occ ? "bg-pb-surface2 font-medium text-pb-dim" : past ? "bg-pb-surface text-pb-dim/60 hover:bg-pb-surface2" : "bg-pb-surface font-medium hover:bg-pb-accent/15"}`}>
                       {occ ? occ.customerName : "Free"}
                     </button>
                   );
@@ -1112,10 +1112,10 @@ export default function Dashboard() {
       </section>
 
       {/* Bottom panels — KICKS-style: performance trend + day state */}
-      <section className="mt-8 grid gap-4 lg:grid-cols-2">
-        <div className="rounded-[10px] border border-pb-border bg-pb-surface p-4">
+      <section className="mt-6 grid gap-4 lg:grid-cols-2">
+        <div className="panel-shadow rounded-[14px] border border-pb-border bg-pb-surface p-5">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="font-extrabold uppercase tracking-wide">Performance trend</h2>
+            <h2 className="text-[15px] font-semibold">Performance trend</h2>
             <p className="text-xs text-pb-dim">Bookings per day · 7 days to {dateLabel} vs the 7 before</p>
           </div>
           <div className="mt-4 flex h-36 items-end gap-2">
@@ -1123,31 +1123,31 @@ export default function Dashboard() {
               <div key={d.iso} className="flex flex-1 flex-col items-center gap-1">
                 <div className="flex h-28 items-end gap-1">
                   <div title={`Previous period: ${d.prev} booking${d.prev === 1 ? "" : "s"}`} className="w-3 rounded-t bg-pb-dim/40" style={{ height: `${d.prev === 0 ? 0 : Math.max(6, (d.prev / trendMax) * 100)}%` }} />
-                  <div title={`This period: ${d.cur} booking${d.cur === 1 ? "" : "s"}`} className="w-3 rounded-t bg-emerald-500" style={{ height: `${d.cur === 0 ? 0 : Math.max(6, (d.cur / trendMax) * 100)}%` }} />
+                  <div title={`This period: ${d.cur} booking${d.cur === 1 ? "" : "s"}`} className="w-3 rounded-t bg-pb-accent" style={{ height: `${d.cur === 0 ? 0 : Math.max(6, (d.cur / trendMax) * 100)}%` }} />
                 </div>
                 <span className="text-[10px] font-semibold text-pb-dim">{d.dow} {d.dayNum}</span>
               </div>
             ))}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-pb-border pt-3 text-xs font-semibold">
-            <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500" /> This 7 days · {trendCurTotal}</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-pb-accent" /> This 7 days · {trendCurTotal}</span>
             <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-pb-dim/40" /> Previous 7 days · {trendPrevTotal}</span>
-            <span className={trendCurTotal >= trendPrevTotal ? "text-emerald-600" : "text-red-500"}>
+            <span className={trendCurTotal >= trendPrevTotal ? "text-pb-accent" : "text-red-500"}>
               {trendCurTotal >= trendPrevTotal ? "▲" : "▼"} {Math.abs(trendCurTotal - trendPrevTotal)} vs previous
             </span>
           </div>
         </div>
 
-        <div className="rounded-[10px] border border-pb-border bg-pb-surface p-4">
-          <h2 className="font-extrabold uppercase tracking-wide">{isToday ? "Today at the club" : "This day at the club"}</h2>
+        <div className="panel-shadow rounded-[14px] border border-pb-border bg-pb-surface p-5">
+          <h2 className="text-[15px] font-semibold">{isToday ? "Today at the club" : "This day at the club"}</h2>
           <div className="mt-3 grid grid-cols-3 gap-3 text-center">
             {[
               ["Bookings", String(counts.total)],
               ["Live sessions", String(liveNowCount)],
               ["No-shows", String(counts.noShow)],
             ].map(([label, value]) => (
-              <div key={label} className="rounded-[10px] bg-pb-surface2 px-2 py-3">
-                <p className="text-2xl font-black tabular-nums">{value}</p>
+              <div key={label} className="rounded-xl bg-pb-surface2 px-2 py-3">
+                <p className="text-2xl font-extrabold tabular-nums">{value}</p>
                 <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-pb-dim">{label}</p>
               </div>
             ))}
@@ -1158,7 +1158,7 @@ export default function Dashboard() {
               <span className="text-pb-dim">Outstanding <span className="font-bold text-pb-text">{fmtRs(outstandingToday)}</span></span>
             </div>
             <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-pb-surface2">
-              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${collectedPct}%` }} />
+              <div className="h-full rounded-full bg-pb-accent" style={{ width: `${collectedPct}%` }} />
             </div>
             <p className="mt-1.5 text-xs text-pb-dim">{collectedPct}% of the day&apos;s court fees collected (cancelled and no-show bookings excluded).</p>
           </div>
@@ -1166,8 +1166,8 @@ export default function Dashboard() {
       </section>
 
       {/* Today's numbers — Doc §6 */}
-      <section className="mt-8">
-        <h2 className="mb-2 font-extrabold uppercase tracking-wide">{isToday ? "Today's numbers" : "Day numbers"}</h2>
+      <section className="mt-6">
+        <h2 className="mb-2 text-[17px] font-semibold">{isToday ? "Today's numbers" : "Day numbers"}</h2>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             ["Collected (court fees)", fmtRs(collectedToday)],
@@ -1179,16 +1179,16 @@ export default function Dashboard() {
             ["Bookings", String(counts.total)],
             ["Completed / no-shows", `${counts.completed} / ${counts.noShow}`],
           ].map(([label, value]) => (
-            <div key={label} className="rounded-[10px] border border-pb-border bg-pb-surface p-4"><p className="text-xs font-semibold uppercase text-pb-dim">{label}</p><p className="mt-1 text-xl font-black">{value}</p></div>
+            <div key={label} className="panel-shadow rounded-[14px] border border-pb-border bg-pb-surface p-5"><p className="text-xs font-semibold uppercase text-pb-dim">{label}</p><p className="mt-1 text-xl font-extrabold">{value}</p></div>
           ))}
         </div>
         <p className="mt-2 text-xs text-pb-dim">Savings assume lights would otherwise stay on for all opening hours ({settings.openingHour}–{settings.closingHour}) on every court, at {settings.lightingPowerKw} kW × Rs {settings.electricityPricePerUnit}/unit. Light hours are summed from the day&apos;s light log.</p>
       </section>
 
       {/* Light log + settings */}
-      <section className="mt-8 grid gap-6 md:grid-cols-2">
-        <div id="light-log" className="scroll-mt-4 rounded-[10px] border border-pb-border bg-pb-surface p-4">
-          <h2 className="mb-3 font-extrabold uppercase tracking-wide">Light log — {dateLabel}</h2>
+      <section className="mt-6 grid gap-6 md:grid-cols-2">
+        <div id="light-log" className="panel-shadow scroll-mt-4 rounded-[14px] border border-pb-border bg-pb-surface p-5">
+          <h2 className="mb-3 text-[15px] font-semibold">Light log — {dateLabel}</h2>
           <ul className="space-y-1.5 text-sm">
             {[...log].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 12).map((l) => (
               <li key={l.id} className="flex items-center gap-2">
@@ -1202,8 +1202,8 @@ export default function Dashboard() {
         </div>
 
         {showSettings && (
-          <div id="settings-panel" className="scroll-mt-4 rounded-[10px] border border-pb-border bg-pb-surface p-4">
-            <h2 className="mb-3 font-extrabold uppercase tracking-wide">Club settings (Doc §6.1)</h2>
+          <div id="settings-panel" className="panel-shadow scroll-mt-4 rounded-[14px] border border-pb-border bg-pb-surface p-5">
+            <h2 className="mb-3 text-[15px] font-semibold">Club settings (Doc §6.1)</h2>
             <div className="grid grid-cols-2 gap-3">
               <label className="block text-sm">Lighting power / court (kW)
                 <input type="number" step="0.1" min={0} value={settings.lightingPowerKw} onChange={(e) => setSettings({ ...settings, lightingPowerKw: Number(e.target.value) })} className={inputCls} /></label>
@@ -1238,7 +1238,7 @@ export default function Dashboard() {
       {/* Action-notice toast: auto-dismisses after ~6s; the notice itself
           stays in the notification panel until it has been read. */}
       {toast && (
-        <div className="fixed bottom-4 right-4 z-50 flex w-[min(92vw,380px)] items-start gap-3 rounded-[10px] border border-pb-amber bg-pb-surface px-4 py-3 shadow-2xl">
+        <div className="fixed bottom-4 right-4 z-50 flex w-[min(92vw,380px)] items-start gap-3 rounded-[14px] border border-pb-border bg-pb-surface px-4 py-3 shadow-2xl">
           <p className="flex-1 text-sm font-medium leading-snug">{toast.text}</p>
           <button onClick={() => setToast(null)} className="-mr-1 -mt-0.5 text-xl leading-none text-pb-dim" aria-label="Dismiss notification">×</button>
         </div>
@@ -1247,9 +1247,9 @@ export default function Dashboard() {
       {/* Booking modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onClick={() => setShowForm(false)}>
-          <form onSubmit={handleAddBooking} onClick={(e) => e.stopPropagation()} className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-pb-surface p-5 shadow-xl sm:rounded-[10px]">
+          <form onSubmit={handleAddBooking} onClick={(e) => e.stopPropagation()} className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-pb-surface p-5 shadow-xl sm:rounded-[14px]">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-extrabold uppercase tracking-wide">Add booking</h2>
+              <h2 className="text-lg font-semibold">Add booking</h2>
               <button type="button" onClick={() => setShowForm(false)} className="text-xl leading-none text-pb-dim">×</button>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -1302,7 +1302,7 @@ export default function Dashboard() {
               )}
             </div>
             <div className="mt-4 flex gap-2">
-              <button type="submit" disabled={!durationValid} className="flex-1 rounded-[10px] bg-pb-amber px-4 py-2.5 font-extrabold text-pb-amber-ink disabled:opacity-40">Save booking</button>
+              <button type="submit" disabled={!durationValid} className="flex-1 rounded-[10px] bg-pb-accent px-4 py-2.5 font-bold text-white disabled:opacity-40">Save booking</button>
               <button type="button" onClick={() => setShowForm(false)} className={btnCls}>Cancel</button>
             </div>
           </form>
