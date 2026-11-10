@@ -55,7 +55,7 @@ export interface LightLogEntry {
    *  start, which gets its own "on" entry when it arrives). Light-hours maths
    *  must ignore "arrived" rows. */
   action: "on" | "off" | "arrived";
-  reason: "check_in" | "automatic" | "manual" | "extension" | "power_restore" | "club_delay";
+  reason: "check_in" | "automatic" | "manual" | "extension" | "power_restore" | "club_delay" | "changeover";
   at: Date;
   /** Optional line shown instead of "<court> lights on/off" — used for club-delay grants, e.g. "Club delay +10 min". */
   detail?: string;
@@ -69,4 +69,10 @@ export interface ClubSettings {
   closingHour: number;
   /** default court fee per hour in rupees — a booking's total is rate × duration unless overridden in the form */
   courtRatePerHour: number;
+  /** Changeover grace (minutes): with a consecutive booking on the same court
+   *  (starting at the session end or within this window after it), the lights
+   *  hold on up to this many minutes past the end waiting for the next team.
+   *  It is a lights state only — never a session extension — and it can never
+   *  apply without a next booking. 0 disables it. */
+  changeoverGraceMinutes: number;
 }

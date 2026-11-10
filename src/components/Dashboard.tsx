@@ -61,16 +61,29 @@ function seedDay(offset: number): { bookings: Booking[]; log: LightLogEntry[] } 
     const checkedIn1 = atMin(aliStart);
     const checkedIn3 = new Date(Math.min(atMin(saraStart + 12).getTime(), now.getTime()));
     const aliCompAt = new Date(checkedIn1.getTime() + 15 * 60_000);
+    // Court 2 changeover demo: Adnan's session ended ~1 minute ago and Rayan's
+    // booking starts exactly at that end (back-to-back) but he hasn't checked
+    // in — so Court 2 sits inside the 3-minute changeover grace, lights held
+    // on. If nobody checks in, the grace expires and the lights go off.
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const coEnd = nowMin - 1;
+    const coStart = coEnd - 60;
+    const changeoverPair: Booking[] = coStart >= 0 ? [
+      { id: uid(), courtId: "c2", customerName: "Adnan Malik", customerPhone: "0300 7778899", dateISO, startMinutes: coStart, durationMinutes: 60, compMinutes: 0, status: "checked_in", checkedInAt: atMin(coStart), lightsOffAt: atMin(coEnd), totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: false, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Adnan Malik", phone: "0300 7778899" }], 1) },
+      { id: uid(), courtId: "c2", customerName: "Rayan Ali", customerPhone: "0321 7779900", dateISO, startMinutes: coEnd, durationMinutes: 60, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Rayan Ali", phone: "0321 7779900" }, { name: "Usman Sheikh", phone: "0301 5550099" }, { name: "Talha Iqbal", phone: "0333 5558877" }, { name: "Danish Ali", phone: "0309 5556655" }], 0) },
+    ] : [];
     return {
       bookings: [
         { id: uid(), courtId: "c1", customerName: "Ali Raza", customerPhone: "0300 1112233", dateISO, startMinutes: aliStart, durationMinutes: 60, compMinutes: 10, status: "checked_in", checkedInAt: checkedIn1, lightsOffAt: atMin(aliStart + 70), totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Ali Raza", phone: "0300 1112233" }, { name: "Daniyal Sheikh", phone: "0321 5551234" }, { name: "Omar Farooq", phone: "0333 5559876" }, { name: "Zain Ul Abideen", phone: "0301 5553456" }], 3) },
         { id: uid(), courtId: "c3", customerName: "Sara Khan", customerPhone: "0321 4455667", dateISO, startMinutes: saraStart, durationMinutes: 60, compMinutes: 0, status: "checked_in", checkedInAt: checkedIn3, lightsOffAt: atMin(saraStart + 60), totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Sara Khan", phone: "0321 4455667" }, { name: "Mahnoor Fatima", phone: "0302 5557788" }, { name: "Hira Shahid", phone: "0345 5552211" }, { name: "Areeba Khan", phone: "0311 5556644" }], 2) },
-        { id: uid(), courtId: "c2", customerName: "Hamza Tariq", customerPhone: "0333 9988776", dateISO, startMinutes: Math.min(base + 35, 1435), durationMinutes: 60, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Hamza Tariq", phone: "0333 9988776" }, { name: "Ahmed Raza", phone: "0300 5554321" }, { name: "Bilal Hussain", phone: "0322 5558765" }, { name: "Fahad Iqbal", phone: "0303 5552109" }], 1) },
+        ...changeoverPair,
+        { id: uid(), courtId: "c2", customerName: "Hamza Tariq", customerPhone: "0333 9988776", dateISO, startMinutes: Math.min(coEnd + 75, 1435), durationMinutes: 60, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Hamza Tariq", phone: "0333 9988776" }, { name: "Ahmed Raza", phone: "0300 5554321" }, { name: "Bilal Hussain", phone: "0322 5558765" }, { name: "Fahad Iqbal", phone: "0303 5552109" }], 1) },
       ],
       log: [
         { id: uid(), courtName: "Court 1", action: "on", reason: "club_delay", at: aliCompAt },
         { id: uid(), courtName: "Court 1", action: "on", reason: "check_in", at: checkedIn1 },
         { id: uid(), courtName: "Court 3", action: "on", reason: "check_in", at: checkedIn3 },
+        ...(coStart >= 0 ? [{ id: uid(), courtName: "Court 2", action: "on" as const, reason: "check_in" as const, at: atMin(coStart) }] : []),
       ],
     };
   }
@@ -131,7 +144,7 @@ const chipCls = "rounded-full border border-pb-border bg-pb-surface2 px-2.5 py-0
 export default function Dashboard() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [days, setDays] = useState<Record<string, DayData>>(() => seedAll());
-  const [settings, setSettings] = useState<ClubSettings>({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23, courtRatePerHour: DEFAULT_RATE_PER_HOUR });
+  const [settings, setSettings] = useState<ClubSettings>({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23, courtRatePerHour: DEFAULT_RATE_PER_HOUR, changeoverGraceMinutes: 3 });
   const [now, setNow] = useState(() => new Date());
   const todayISO = isoFromDate(now);
   const [selectedISO, setSelectedISO] = useState<string>(() => isoFromDate(new Date()));
@@ -147,6 +160,7 @@ export default function Dashboard() {
   const completedRef = useRef<Set<string>>(new Set());
   const noShowRef = useRef<Set<string>>(new Set());
   const startedRef = useRef<Set<string>>(new Set());
+  const changeoverRef = useRef<Set<string>>(new Set());
 
   const day: DayData = days[selectedISO] ?? { courts: days[todayISO]?.courts ?? [], bookings: [], log: [] };
   const courts = day.courts;
@@ -197,8 +211,52 @@ export default function Dashboard() {
     const s = liveSessionForCourt(courtId, at);
     return s && bookingStart(s) <= at ? s : undefined;
   };
+  // The booking that follows `prev` on its court closely enough to count as
+  // consecutive: it starts at prev's session end, or within the changeover
+  // grace after it.
+  const consecutiveNext = (prev: Booking, graceMinutes: number) => {
+    if (!prev.lightsOffAt) return undefined;
+    const endMs = prev.lightsOffAt.getTime();
+    return bookings
+      .filter((n) => n.courtId === prev.courtId && n.id !== prev.id
+        && bookingStart(n).getTime() > bookingStart(prev).getTime()
+        && bookingStart(n).getTime() <= endMs + graceMinutes * 60_000)
+      .sort((a, b) => a.startMinutes - b.startMinutes)[0];
+  };
+  // Changeover grace (decided 2026-11-10): when a session ends and a
+  // consecutive booking follows on the same court, the lights do NOT switch
+  // off at the end — they hold on for up to `changeoverGraceMinutes` waiting
+  // for the next team. This is a derived LIGHTS state only: the finishing
+  // session still ends at its booked end (status, fee, shares untouched), and
+  // with no next booking the grace can never apply — lights go off at the
+  // end, immediately. Once the next team checks in, their own session logic
+  // owns the lights and the changeover ends.
+  const changeoverForCourt = (courtId: string, at: Date) => {
+    const grace = settings.changeoverGraceMinutes;
+    if (grace <= 0) return undefined;
+    const prev = bookings
+      .filter((b) => b.courtId === courtId && b.checkedInAt !== null
+        && (b.status === "checked_in" || b.status === "completed")
+        && b.lightsOffAt !== null && b.lightsOffAt.getTime() <= at.getTime()
+        && at.getTime() < b.lightsOffAt.getTime() + grace * 60_000)
+      .sort((a, b) => (b.lightsOffAt as Date).getTime() - (a.lightsOffAt as Date).getTime())[0];
+    if (!prev || !prev.lightsOffAt) return undefined;
+    const prevEnd = prev.lightsOffAt;
+    // If staff already switched this court off by hand during that session
+    // (e.g. End session), the lights are off — there is no changeover to hold.
+    const courtName = courts.find((c) => c.id === courtId)?.name;
+    const cutByHand = log.some((e) => e.courtName === courtName && e.action === "off" && e.reason === "manual"
+      && e.at.getTime() >= bookingStart(prev).getTime() && e.at.getTime() < prevEnd.getTime());
+    if (cutByHand) return undefined;
+    const next = consecutiveNext(prev, grace);
+    if (!next || next.status !== "booked") return undefined;
+    // The next booking's own window must not have fully passed already.
+    if (bookingStart(next).getTime() + next.durationMinutes * 60_000 <= at.getTime()) return undefined;
+    return { prev, next, until: new Date(prevEnd.getTime() + grace * 60_000) };
+  };
   const lightsOnFor = (court: Court, at: Date) =>
-    court.manualOverride ? court.manualLightsOn : lightsSessionForCourt(court.id, at) !== undefined;
+    court.manualOverride ? court.manualLightsOn
+      : lightsSessionForCourt(court.id, at) !== undefined || changeoverForCourt(court.id, at) !== undefined;
 
   // Doc §3 step 6 + no-show sweep (today only): complete expired sessions,
   // log automatic switch-off, auto-mark bookings past their end as no-show.
@@ -212,10 +270,21 @@ export default function Dashboard() {
     patchBookings(todayISO, (prev) => prev.map((b) =>
       due.some((d) => d.id === b.id) ? { ...b, status: "completed" as const }
       : late.some((d) => d.id === b.id) ? { ...b, status: "no_show" as const } : b));
-    const offEntries = due.filter((b) => !courts.find((c) => c.id === b.courtId)?.manualOverride);
+    const grace = settings.changeoverGraceMinutes;
+    const heldForChangeover = (b: Booking) => {
+      if (grace <= 0) return false;
+      const succ = consecutiveNext(b, grace);
+      return succ !== undefined && (succ.status === "booked" || succ.status === "checked_in");
+    };
+    const offEntries = due.filter((b) => !courts.find((c) => c.id === b.courtId)?.manualOverride && !heldForChangeover(b));
     if (offEntries.length > 0)
       patchDay(todayISO, (d) => ({ ...d, log: [...offEntries.map((b) => ({ id: uid(), courtName: courts.find((c) => c.id === b.courtId)?.name ?? "Court", action: "off" as const, reason: "automatic" as const, at: new Date() })), ...d.log] }));
-    if (due.length > 0) setNotice(`Time up — ${due.map((b) => b.customerName).join(", ")}: session completed, lights off automatically.`);
+    if (due.length > 0) {
+      const held = due.filter(heldForChangeover);
+      setNotice(held.length > 0
+        ? `Time up — ${due.map((b) => b.customerName).join(", ")}: session completed. Lights held on for the changeover — they go off ${grace} min after the end if the next team doesn't check in.`
+        : `Time up — ${due.map((b) => b.customerName).join(", ")}: session completed, lights off automatically.`);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [now, isToday]);
 
@@ -228,6 +297,34 @@ export default function Dashboard() {
     if (starting.length === 0) return;
     starting.forEach((b) => startedRef.current.add(b.id));
     patchDay(todayISO, (d) => ({ ...d, log: [...starting.map((b) => ({ id: uid(), courtName: courts.find((c) => c.id === b.courtId)?.name ?? "Court", action: "on" as const, reason: "check_in" as const, at: new Date() })), ...d.log] }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now, isToday]);
+
+  // Changeover sweep (today only): a session that ended with a consecutive
+  // booking behind it had its lights held on for the grace — no "off" was
+  // logged at its end. If the next team never checked in, log that switch-off
+  // exactly once when the grace expires (reason "changeover"). If they did
+  // check in, their own session owns the lights and nothing is logged here.
+  useEffect(() => {
+    if (!isToday) return;
+    const grace = settings.changeoverGraceMinutes;
+    if (grace <= 0) return;
+    const expired = bookings.filter((b) => {
+      if (b.status !== "completed" || b.checkedInAt === null || b.lightsOffAt === null) return false;
+      if (changeoverRef.current.has(b.id)) return false;
+      const end = b.lightsOffAt;
+      if (now.getTime() < end.getTime() + grace * 60_000) return false;
+      if (courts.find((c) => c.id === b.courtId)?.manualOverride) return false;
+      if (!consecutiveNext(b, grace)) return false;
+      const tookOver = bookings.some((n) => n.courtId === b.courtId && n.id !== b.id && n.checkedInAt !== null
+        && (n.status === "checked_in" || n.status === "completed")
+        && bookingStart(n).getTime() > bookingStart(b).getTime()
+        && bookingStart(n).getTime() <= end.getTime() + grace * 60_000);
+      return !tookOver;
+    });
+    if (expired.length === 0) return;
+    expired.forEach((b) => changeoverRef.current.add(b.id));
+    patchDay(todayISO, (d) => ({ ...d, log: [...expired.map((b) => ({ id: uid(), courtName: courts.find((c) => c.id === b.courtId)?.name ?? "Court", action: "off" as const, reason: "changeover" as const, at: new Date(), detail: "Changeover grace expired — next team did not check in" })), ...d.log] }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [now, isToday]);
 
@@ -251,7 +348,7 @@ export default function Dashboard() {
       }
     }
     for (const c of courts)
-      if (lightsOnFor(c, now) && !activeForCourt(c.id) && !c.manualOverride)
+      if (lightsOnFor(c, now) && !activeForCourt(c.id) && !c.manualOverride && !changeoverForCourt(c.id, now))
         alerts.push(`${c.name} lights are on with no active session.`);
   }
 
@@ -390,9 +487,9 @@ export default function Dashboard() {
   }
 
   function handleReset() {
-    completedRef.current.clear(); noShowRef.current.clear(); startedRef.current.clear();
+    completedRef.current.clear(); noShowRef.current.clear(); startedRef.current.clear(); changeoverRef.current.clear();
     setDays(seedAll());
-    setSettings({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23, courtRatePerHour: DEFAULT_RATE_PER_HOUR });
+    setSettings({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23, courtRatePerHour: DEFAULT_RATE_PER_HOUR, changeoverGraceMinutes: 3 });
     setSelectedISO(isoFromDate(new Date()));
     setConfirmReset(false);
     setNotice("Demo data reset.");
@@ -620,15 +717,18 @@ export default function Dashboard() {
             .filter((b) => b.courtId === court.id && b.status === "booked" && (!isToday || b.startMinutes > nowMin))
             .sort((a, b) => a.startMinutes - b.startMinutes)[0];
           const pending = active !== undefined && bookingStart(active) > now;
+          const changeover = isToday && !court.manualOverride ? changeoverForCourt(court.id, now) : undefined;
           const status = pending
             ? `Checked in · lights on at ${formatMinutesOfDay(active.startMinutes)}`
             : active
               ? `In play · ${countdown(active.lightsOffAt, now)} left`
-              : on
-                ? "Lights on · manual override"
-                : nextForCourt
-                  ? `Free · next ${formatMinutesOfDay(nextForCourt.startMinutes)}`
-                  : "Free";
+              : changeover
+                ? `Changeover · lights off at ${changeover.until.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+                : on
+                  ? "Lights on · manual override"
+                  : nextForCourt
+                    ? `Free · next ${formatMinutesOfDay(nextForCourt.startMinutes)}`
+                    : "Free";
           return (
             <button key={court.id} onClick={() => { setFocusedCourtId(court.id); scrollToId(`court-card-${court.id}`); }}
               className={`min-w-[176px] flex-1 rounded-[10px] border p-3 text-left ${on ? "border-pb-amber bg-pb-surface" : "border-pb-border bg-pb-surface"} hover:bg-pb-surface2`}>
@@ -648,6 +748,7 @@ export default function Dashboard() {
           const active = isToday ? activeForCourt(court.id) : undefined;
           const lightsOn = isToday && lightsOnFor(court, now);
           const pending = active !== undefined && bookingStart(active) > now;
+          const changeover = isToday && !active && !court.manualOverride ? changeoverForCourt(court.id, now) : undefined;
           return (
             <div key={court.id} id={`court-card-${court.id}`} className={`rounded-[10px] border p-4 ${lightsOn ? "lit-glow border-pb-amber bg-pb-amber text-pb-amber-ink" : "border-pb-border bg-pb-surface"} ${focusedCourtId === court.id ? "ring-2 ring-pb-amber" : ""}`}>
               <div className="flex items-center justify-between">
@@ -666,6 +767,12 @@ export default function Dashboard() {
                   ) : (
                     <p className={`mt-1 text-xs ${lightsOn ? "" : "text-pb-dim"} opacity-80`}>Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
                   )}
+                </div>
+              ) : changeover ? (
+                <div className="mt-3">
+                  <p className="text-sm font-semibold">{changeover.prev.customerName} finished · next {changeover.next.customerName} at {formatMinutesOfDay(changeover.next.startMinutes)}</p>
+                  <p className="font-black leading-none text-4xl tabular-nums">{countdown(changeover.until, now)}</p>
+                  <p className={`mt-1 text-xs ${lightsOn ? "" : "text-pb-dim"} opacity-80`}>Changeover · lights off at {changeover.until.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} if {changeover.next.customerName} doesn&apos;t check in</p>
                 </div>
               ) : (
                 <p className={`mt-3 text-sm ${lightsOn ? "" : "text-pb-dim"}`}>
@@ -911,8 +1018,11 @@ export default function Dashboard() {
                 <input type="number" min={0} value={settings.noShowWaitMinutes} onChange={(e) => setSettings({ ...settings, noShowWaitMinutes: Number(e.target.value) })} className={inputCls} /></label>
               <label className="block text-sm">Court fee (Rs / hour)
                 <input type="number" min={0} step={100} value={settings.courtRatePerHour} onChange={(e) => setSettings({ ...settings, courtRatePerHour: Number(e.target.value) })} className={inputCls} /></label>
+              <label className="block text-sm">Changeover grace (minutes)
+                <input type="number" min={0} value={settings.changeoverGraceMinutes} onChange={(e) => setSettings({ ...settings, changeoverGraceMinutes: Number(e.target.value) })} className={inputCls} /></label>
             </div>
             <p className="mt-2 text-xs text-pb-dim">Cost of 1 hour of lights = {settings.lightingPowerKw} kW × Rs {settings.electricityPricePerUnit} = Rs {settings.lightingPowerKw * settings.electricityPricePerUnit}</p>
+            <p className="mt-1 text-xs text-pb-dim">Changeover grace: with back-to-back bookings on a court, the lights hold on this many minutes past a session&apos;s end waiting for the next team (the session itself still ends on time). 0 turns the grace off — lights go off the moment a session ends.</p>
             <div className="mt-4 flex gap-2">
               <input placeholder="New court name" value={newCourtName} onChange={(e) => setNewCourtName(e.target.value)} className={inputCls} />
               <button onClick={handleAddCourt} className={btnCls}>Add court</button>

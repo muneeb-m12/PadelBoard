@@ -58,7 +58,11 @@ export function bookedEnd(booking: Booking): Date {
  *  club-delay comp push the end later. Lights-on is anchored to the booked
  *  START (correction, 2026-11-10): an early check-in inside the 15-min window
  *  only registers the arrival — lights stay off and turn on exactly at the
- *  booked start; a check-in at/after the start turns them on immediately. */
+ *  booked start; a check-in at/after the start turns them on immediately.
+ *  Changeover grace (2026-11-10) does NOT move this end: with a consecutive
+ *  booking on the same court, the derived lights state (Dashboard) may hold
+ *  the lights on for up to `changeoverGraceMinutes` past it waiting for the
+ *  next team, but the session itself still ends exactly here. */
 export function sessionEnd(booking: Booking): Date {
   return new Date(bookedEnd(booking).getTime() + booking.compMinutes * 60_000);
 }

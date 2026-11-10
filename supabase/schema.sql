@@ -10,6 +10,11 @@ create table if not exists public.clubs (
   lighting_power_kw numeric not null default 2,
   electricity_price_per_unit numeric not null default 50,
   no_show_wait_minutes int not null default 15,
+  -- Changeover grace: with a consecutive booking on the same court (starting
+  -- at the session end or within this many minutes after it), lights hold on
+  -- past the end waiting for the next team. Lights state only — never a
+  -- session extension — and never applies without a next booking. 0 = off.
+  changeover_grace_minutes int not null default 3,
   check_in_early_minutes int not null default 15,
   court_rate_per_hour numeric not null default 4800,
   opening_hour int not null default 10,
@@ -90,8 +95,9 @@ create table if not exists public.light_log (
   -- registered, lights still off — they turn on at the booked start, which
   -- gets its own 'on' row). Light-hours maths must ignore 'arrived' rows.
   action text not null check (action in ('on','off','arrived')),
-  reason text not null check (reason in ('check_in','automatic','manual','extension','power_restore','club_delay')),
-  -- Free-text detail for the history line; club-delay grants record e.g. 'Club delay +10 min' here.
+  reason text not null check (reason in ('check_in','automatic','manual','extension','power_restore','club_delay','changeover')),
+  -- Free-text detail for the history line; club-delay grants record e.g. 'Club delay +10 min' here,
+  -- and a 'changeover' off records 'Changeover grace expired — next team did not check in'.
   note text,
   created_at timestamptz not null default now()
 );
