@@ -16,7 +16,7 @@ npm run dev
 # open http://localhost:3000
 ```
 
-Without Supabase keys the dashboard runs with seeded demo data in the browser: court cards with live countdowns, free-slots grid, add booking (overlap rejected), check-in (15-minute window, lights-off = check-in + booked length), extend 30m/1h, no-show release, manual light override, light log, savings/utilization figures, and Reset demo data.
+Without Supabase keys the dashboard runs with seeded demo data in the browser: court cards with live countdowns, free-slots grid, add booking (overlap rejected), check-in (15-minute window; the session end is anchored to the booked end, so a late arrival loses the missed minutes), extend 30m/1h, free "club delay" comp minutes when the delay was the club's fault, no-show release, manual light override, light log, savings/utilization figures, and Reset demo data.
 
 ## Connect Supabase (5 minutes)
 

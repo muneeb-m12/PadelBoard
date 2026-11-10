@@ -30,8 +30,12 @@ export interface Booking {
   dateISO: string;
   /** minutes since midnight, e.g. 19:30 = 1170 — any start time is allowed */
   startMinutes: number;
-  /** any length from 1 minute up; extensions add minutes too */
+  /** any length from 1 minute up; PAID extensions add minutes (and fee) here */
   durationMinutes: number;
+  /** FREE minutes granted when a delay was the club's fault. Kept separate from
+   *  durationMinutes on purpose: comp pushes the session end later but never
+   *  changes totalAmount and never re-splits the shares. */
+  compMinutes: number;
   status: BookingStatus;
   checkedInAt: Date | null;
   lightsOffAt: Date | null;
@@ -47,8 +51,10 @@ export interface LightLogEntry {
   id: string;
   courtName: string;
   action: "on" | "off";
-  reason: "check_in" | "automatic" | "manual" | "extension" | "power_restore";
+  reason: "check_in" | "automatic" | "manual" | "extension" | "power_restore" | "club_delay";
   at: Date;
+  /** Optional line shown instead of "<court> lights on/off" — used for club-delay grants, e.g. "Club delay +10 min". */
+  detail?: string;
 }
 
 export interface ClubSettings {

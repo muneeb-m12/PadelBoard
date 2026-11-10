@@ -36,11 +36,20 @@ create table if not exists public.bookings (
   booking_date date not null,
   start_time time not null,
   duration_minutes int not null check (duration_minutes > 0),
+  -- Free minutes granted when a delay was the club's fault. The session end is
+  -- anchored to the booked end: start_time + duration_minutes + comp_minutes
+  -- (paid extensions add to duration_minutes; check-in time never moves the
+  -- end). comp_minutes is deliberately separate: it never changes total_amount
+  -- and never re-splits booking_shares, and it is NOT part of the exclusion
+  -- range below — the club absorbs a comp overrun.
+  comp_minutes int not null default 0 check (comp_minutes >= 0),
   status text not null default 'booked'
     check (status in ('booked','checked_in','completed','cancelled','no_show')),
   total_amount numeric not null default 0,
   split_payment boolean not null default false,
   checked_in_at timestamptz,
+  -- Set at check-in to the session end: (booking_date + start_time) +
+  -- duration_minutes + comp_minutes. The cron switch-off compares against it.
   lights_off_at timestamptz,
   created_at timestamptz not null default now(),
   -- No double booking, enforced in the database itself (Doc §5):
@@ -78,7 +87,9 @@ create table if not exists public.light_log (
   court_id uuid not null references public.courts(id) on delete cascade,
   booking_id uuid references public.bookings(id) on delete set null,
   action text not null check (action in ('on','off')),
-  reason text not null check (reason in ('check_in','automatic','manual','extension','power_restore')),
+  reason text not null check (reason in ('check_in','automatic','manual','extension','power_restore','club_delay')),
+  -- Free-text detail for the history line; club-delay grants record e.g. 'Club delay +10 min' here.
+  note text,
   created_at timestamptz not null default now()
 );
 

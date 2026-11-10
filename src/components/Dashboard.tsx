@@ -4,7 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import type { Booking, BookingShare, Court, LightLogEntry, ClubSettings, PaymentMethod } from "@/lib/types";
 import {
   bookingStart, canCheckIn, formatDuration, formatHour, formatMinutesOfDay, hasOverlap,
-  isoAddDays, isoFromDate, isoToDate, lightsOffTime, minutesToTimeString, timeStringToMinutes,
+  isoAddDays, isoFromDate, isoToDate, minutesToTimeString, sessionEnd, timeStringToMinutes,
 } from "@/lib/rules";
 const uid = () => Math.random().toString(36).slice(2, 10);
 const DURATION_CHIPS = [1, 15, 30, 45, 60, 90, 120, 180];
@@ -48,17 +48,27 @@ function seedDay(offset: number): { bookings: Booking[]; log: LightLogEntry[] } 
   const base = new Date(); base.setDate(base.getDate() + offset);
   const dateISO = isoFromDate(base);
   const now = new Date();
-  const h = Math.min(20, Math.max(16, now.getHours()));
   if (offset === 0) {
-    const checkedIn1 = new Date(now.getTime() - 19 * 60_000);
-    const checkedIn3 = new Date(now.getTime() - 47 * 60_000);
+    // Session ends are anchored to the BOOKED end (start + duration + comp),
+    // so seed the starts relative to "now" — both live sessions are mid-flight
+    // whenever the demo is opened. Ali checked in on time and later received
+    // +10 min club-delay comp; Sara checked in 12 min late (her own fault),
+    // so her end stayed at the booked end and she lost those minutes.
+    const base = Math.floor((now.getHours() * 60 + now.getMinutes()) / 5) * 5;
+    const atMin = (mins: number) => { const d = isoToDate(dateISO); d.setMinutes(mins); return d; };
+    const aliStart = Math.max(0, base - 25);
+    const saraStart = Math.max(0, base - 40);
+    const checkedIn1 = atMin(aliStart);
+    const checkedIn3 = new Date(Math.min(atMin(saraStart + 12).getTime(), now.getTime()));
+    const aliCompAt = new Date(checkedIn1.getTime() + 15 * 60_000);
     return {
       bookings: [
-        { id: uid(), courtId: "c1", customerName: "Ali Raza", customerPhone: "0300 1112233", dateISO, startMinutes: h * 60, durationMinutes: 60, status: "checked_in", checkedInAt: checkedIn1, lightsOffAt: lightsOffTime(checkedIn1, 60), totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Ali Raza", phone: "0300 1112233" }, { name: "Daniyal Sheikh", phone: "0321 5551234" }, { name: "Omar Farooq", phone: "0333 5559876" }, { name: "Zain Ul Abideen", phone: "0301 5553456" }], 3) },
-        { id: uid(), courtId: "c3", customerName: "Sara Khan", customerPhone: "0321 4455667", dateISO, startMinutes: h * 60, durationMinutes: 60, status: "checked_in", checkedInAt: checkedIn3, lightsOffAt: lightsOffTime(checkedIn3, 60), totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Sara Khan", phone: "0321 4455667" }, { name: "Mahnoor Fatima", phone: "0302 5557788" }, { name: "Hira Shahid", phone: "0345 5552211" }, { name: "Areeba Khan", phone: "0311 5556644" }], 2) },
-        { id: uid(), courtId: "c2", customerName: "Hamza Tariq", customerPhone: "0333 9988776", dateISO, startMinutes: (h + 1 <= 23 ? h + 1 : h) * 60, durationMinutes: 60, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Hamza Tariq", phone: "0333 9988776" }, { name: "Ahmed Raza", phone: "0300 5554321" }, { name: "Bilal Hussain", phone: "0322 5558765" }, { name: "Fahad Iqbal", phone: "0303 5552109" }], 1) },
+        { id: uid(), courtId: "c1", customerName: "Ali Raza", customerPhone: "0300 1112233", dateISO, startMinutes: aliStart, durationMinutes: 60, compMinutes: 10, status: "checked_in", checkedInAt: checkedIn1, lightsOffAt: atMin(aliStart + 70), totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Ali Raza", phone: "0300 1112233" }, { name: "Daniyal Sheikh", phone: "0321 5551234" }, { name: "Omar Farooq", phone: "0333 5559876" }, { name: "Zain Ul Abideen", phone: "0301 5553456" }], 3) },
+        { id: uid(), courtId: "c3", customerName: "Sara Khan", customerPhone: "0321 4455667", dateISO, startMinutes: saraStart, durationMinutes: 60, compMinutes: 0, status: "checked_in", checkedInAt: checkedIn3, lightsOffAt: atMin(saraStart + 60), totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Sara Khan", phone: "0321 4455667" }, { name: "Mahnoor Fatima", phone: "0302 5557788" }, { name: "Hira Shahid", phone: "0345 5552211" }, { name: "Areeba Khan", phone: "0311 5556644" }], 2) },
+        { id: uid(), courtId: "c2", customerName: "Hamza Tariq", customerPhone: "0333 9988776", dateISO, startMinutes: Math.min(base + 35, 1435), durationMinutes: 60, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Hamza Tariq", phone: "0333 9988776" }, { name: "Ahmed Raza", phone: "0300 5554321" }, { name: "Bilal Hussain", phone: "0322 5558765" }, { name: "Fahad Iqbal", phone: "0303 5552109" }], 1) },
       ],
       log: [
+        { id: uid(), courtName: "Court 1", action: "on", reason: "club_delay", at: aliCompAt },
         { id: uid(), courtName: "Court 1", action: "on", reason: "check_in", at: checkedIn1 },
         { id: uid(), courtName: "Court 3", action: "on", reason: "check_in", at: checkedIn3 },
       ],
@@ -67,18 +77,19 @@ function seedDay(offset: number): { bookings: Booking[]; log: LightLogEntry[] } 
   if (offset === 1) {
     return {
       bookings: [
-        { id: uid(), courtId: "c1", customerName: "Usman Malik", customerPhone: "0301 2233445", dateISO, startMinutes: 19 * 60, durationMinutes: 90, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR * 1.5, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR * 1.5, [{ name: "Usman Malik", phone: "0301 2233445" }, { name: "Talha Mehmood", phone: "0312 5553344" }, { name: "Shahzaib Ali", phone: "0331 5559988" }, { name: "Waqas Ahmad", phone: "0309 5551122" }], 0) },
-        { id: uid(), courtId: "c2", customerName: "Ayesha Noor", customerPhone: "0345 6677889", dateISO, startMinutes: 20 * 60 + 30, durationMinutes: 60, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: false, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Ayesha Noor", phone: "0345 6677889" }], 0) },
+        { id: uid(), courtId: "c1", customerName: "Usman Malik", customerPhone: "0301 2233445", dateISO, startMinutes: 19 * 60, durationMinutes: 90, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR * 1.5, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR * 1.5, [{ name: "Usman Malik", phone: "0301 2233445" }, { name: "Talha Mehmood", phone: "0312 5553344" }, { name: "Shahzaib Ali", phone: "0331 5559988" }, { name: "Waqas Ahmad", phone: "0309 5551122" }], 0) },
+        { id: uid(), courtId: "c2", customerName: "Ayesha Noor", customerPhone: "0345 6677889", dateISO, startMinutes: 20 * 60 + 30, durationMinutes: 60, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: false, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Ayesha Noor", phone: "0345 6677889" }], 0) },
       ],
       log: [],
     };
   }
   if (offset === -1) {
-    const y = isoToDate(dateISO); y.setHours(19, 5, 0, 0);
-    const off = new Date(y.getTime() + 60 * 60_000);
+    const y = isoToDate(dateISO); y.setHours(19, 5, 0, 0); // checked in 5 min late (his own fault)…
+    const yStart = isoToDate(dateISO); yStart.setHours(19, 0, 0, 0);
+    const off = new Date(yStart.getTime() + 60 * 60_000); // …so the session still ended at the booked end, 20:00
     return {
       bookings: [
-        { id: uid(), courtId: "c1", customerName: "Bilal Ahmed", customerPhone: "0308 1122334", dateISO, startMinutes: 19 * 60, durationMinutes: 60, status: "completed", checkedInAt: y, lightsOffAt: off, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Bilal Ahmed", phone: "0308 1122334" }, { name: "Hassan Javed", phone: "0305 5556677" }, { name: "Imran Khalid", phone: "0323 5554433" }, { name: "Noman Aslam", phone: "0313 5552211" }], 4) },
+        { id: uid(), courtId: "c1", customerName: "Bilal Ahmed", customerPhone: "0308 1122334", dateISO, startMinutes: 19 * 60, durationMinutes: 60, compMinutes: 0, status: "completed", checkedInAt: y, lightsOffAt: off, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Bilal Ahmed", phone: "0308 1122334" }, { name: "Hassan Javed", phone: "0305 5556677" }, { name: "Imran Khalid", phone: "0323 5554433" }, { name: "Noman Aslam", phone: "0313 5552211" }], 4) },
       ],
       log: [
         { id: uid(), courtName: "Court 1", action: "off", reason: "automatic", at: off },
@@ -152,8 +163,8 @@ export default function Dashboard() {
     // Courts are shared across days in demo data — apply to every day bucket.
     setDays((prev) => Object.fromEntries(Object.entries(prev).map(([k, d]) => [k, { ...d, courts: fn(d.courts) }])));
   };
-  const addLog = (iso: string, courtName: string, action: "on" | "off", reason: LightLogEntry["reason"]) =>
-    patchDay(iso, (d) => ({ ...d, log: [{ id: uid(), courtName, action, reason, at: new Date() }, ...d.log] }));
+  const addLog = (iso: string, courtName: string, action: "on" | "off", reason: LightLogEntry["reason"], detail?: string) =>
+    patchDay(iso, (d) => ({ ...d, log: [{ id: uid(), courtName, action, reason, at: new Date(), detail }, ...d.log] }));
 
   // tick every second for countdowns + live clock
   useEffect(() => {
@@ -172,8 +183,9 @@ export default function Dashboard() {
     window.localStorage.setItem("pb-theme", theme);
   }, [theme]);
 
-  // A session is live only until its lights-off time; light state is DERIVED
-  // from this, never stored — a stored copy once let courts show ON after time-up.
+  // A session is live only until its lights-off time (= sessionEnd: the booked
+  // end + comp minutes); light state is DERIVED from this, never stored — a
+  // stored copy once let courts show ON after time-up.
   const liveSessionForCourt = (courtId: string, at: Date) =>
     bookings.find((b) => b.courtId === courtId && b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > at);
   const lightsOnFor = (court: Court, at: Date) =>
@@ -247,7 +259,7 @@ export default function Dashboard() {
     if (form.splitPayment && extras.some((p) => !p.phone.trim())) { setNotice("Every split player needs a WhatsApp number, so payment requests can be sent."); return; }
     const players = [{ name: form.name.trim(), phone: form.phone.trim() }, ...(form.splitPayment ? extras.map((p) => ({ name: p.name.trim(), phone: p.phone.trim() })) : [])];
     const shares = equalShares(totalAmount, players, 0);
-    patchBookings(form.dateISO, (b) => [...b, { id: uid(), courtId: form.courtId, customerName: form.name.trim(), customerPhone: form.phone.trim(), dateISO: form.dateISO, startMinutes, durationMinutes, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount, splitPayment: form.splitPayment && players.length > 1, shares }]);
+    patchBookings(form.dateISO, (b) => [...b, { id: uid(), courtId: form.courtId, customerName: form.name.trim(), customerPhone: form.phone.trim(), dateISO: form.dateISO, startMinutes, durationMinutes, status: "booked", checkedInAt: null, lightsOffAt: null, compMinutes: 0, totalAmount, splitPayment: form.splitPayment && players.length > 1, shares }]);
     setNotice(form.splitPayment && players.length > 1
       ? `Booking created for ${form.name} — ${fmtRs(totalAmount)} split ${players.length} ways (${fmtRs(Math.floor(totalAmount / players.length))} each). Payment requests ready in the booking's Payments panel.`
       : `Booking created for ${form.name} — ${formatMinutesOfDay(startMinutes)}–${formatMinutesOfDay(startMinutes + durationMinutes)} (${formatDuration(durationMinutes)}), fee ${fmtRs(totalAmount)}.`);
@@ -258,15 +270,20 @@ export default function Dashboard() {
     const check = canCheckIn(b, new Date());
     if (!check.ok) { setNotice(check.message); return; }
     const at = new Date();
-    const off = lightsOffTime(at, b.durationMinutes);
+    // The end is anchored to the BOOKED end (start + duration + comp), never to
+    // the check-in moment: checking in early just lights the court sooner, and
+    // a late arrival through the player's own fault loses the missed minutes.
+    const off = sessionEnd(b);
     patchBookings(b.dateISO, (prev) => prev.map((x) => (x.id === b.id ? { ...x, status: "checked_in", checkedInAt: at, lightsOffAt: off } : x)));
     patchCourts((cs) => cs.map((c) => (c.id === b.courtId ? { ...c, manualOverride: false, manualLightsOn: false } : c)));
     addLog(b.dateISO, courts.find((c) => c.id === b.courtId)?.name ?? "Court", "on", "check_in");
-    setNotice(`${b.customerName} checked in. Lights off at ${off.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
+    setNotice(`${b.customerName} checked in. Session ends at the booked end — lights off at ${off.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
   }
 
   function handleExtend(b: Booking, extraMinutes: number) {
-    const clash = hasOverlap(bookings, b.courtId, b.startMinutes, b.durationMinutes + extraMinutes, b.id);
+    // The session really occupies start → start + duration + comp, so the clash
+    // check must include any club-delay comp already granted.
+    const clash = hasOverlap(bookings, b.courtId, b.startMinutes, b.durationMinutes + b.compMinutes + extraMinutes, b.id);
     if (clash) { setNotice(`Can't extend — the next slot is booked by ${clash.customerName}.`); return; }
     if (!b.lightsOffAt) return;
     const off = new Date(b.lightsOffAt.getTime() + extraMinutes * 60_000);
@@ -280,6 +297,18 @@ export default function Dashboard() {
       return { ...x, durationMinutes: x.durationMinutes + extraMinutes, lightsOffAt: off, totalAmount: newTotal, shares };
     }));
     setNotice(`Extended by ${formatDuration(extraMinutes)} (+${fmtRs(extraFee)} added to the fee, re-split between players). New lights-off: ${off.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
+  }
+
+  /** Club delay: the delay was the club's fault, so staff grant FREE minutes.
+   *  They accumulate in compMinutes — deliberately kept out of durationMinutes
+   *  so the fee (totalAmount) and the split shares are never touched — and the
+   *  grant is recorded in the light log as "Club delay +N min". */
+  function handleClubDelay(b: Booking, compMins: number) {
+    if (!b.lightsOffAt) return;
+    const off = new Date(b.lightsOffAt.getTime() + compMins * 60_000);
+    patchBookings(b.dateISO, (prev) => prev.map((x) => (x.id === b.id ? { ...x, compMinutes: x.compMinutes + compMins, lightsOffAt: off } : x)));
+    addLog(b.dateISO, courts.find((c) => c.id === b.courtId)?.name ?? "Court", "on", "club_delay", `Club delay +${compMins} min`);
+    setNotice(`Club delay: +${compMins} min free for ${b.customerName} — no charge, fee and split shares unchanged. Session now ends ${off.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
   }
 
   function handleEndSession(b: Booking) {
@@ -595,7 +624,7 @@ export default function Dashboard() {
                 <div className="mt-3">
                   <p className="text-sm font-semibold">{active.customerName} · {active.customerPhone}</p>
                   <p className="font-black leading-none text-4xl tabular-nums">{countdown(active.lightsOffAt, now)}</p>
-                  <p className={`mt-1 text-xs ${lightsOn ? "" : "text-pb-dim"} opacity-80`}>Lights off at {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{court.manualOverride ? " · Manual override" : ""}</p>
+                  <p className={`mt-1 text-xs ${lightsOn ? "" : "text-pb-dim"} opacity-80`}>Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
                 </div>
               ) : (
                 <p className={`mt-3 text-sm ${lightsOn ? "" : "text-pb-dim"}`}>
@@ -606,7 +635,7 @@ export default function Dashboard() {
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button onClick={() => handleToggleLights(court)} className={lightsOn ? "rounded-[10px] bg-pb-amber-ink px-3 py-1.5 text-sm font-bold text-pb-amber" : btnCls}>{lightsOn ? "Turn off manually" : "Turn on manually"}</button>
                   {court.manualOverride && <button onClick={() => handleBackToAuto(court)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Back to auto</button>}
-                  {active && <><button onClick={() => handleExtend(active, 30)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Extend 30m</button><button onClick={() => handleExtend(active, 60)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Extend 1h</button><button onClick={() => handleEndSession(active)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>End session</button></>}
+                  {active && <><button onClick={() => handleExtend(active, 30)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Extend 30m</button><button onClick={() => handleExtend(active, 60)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>Extend 1h</button><span className="flex items-center gap-1 text-sm font-bold" title="Free minutes when the delay was the club's fault — no charge, fee unchanged">Club delay {[5, 10, 15].map((mins) => <button key={mins} onClick={() => handleClubDelay(active, mins)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-2 py-1.5 text-sm font-bold" : btnCls}>+{mins}m</button>)}</span><button onClick={() => handleEndSession(active)} className={lightsOn ? "rounded-[10px] border border-pb-amber-ink/40 px-3 py-1.5 text-sm font-bold" : btnCls}>End session</button></>}
                 </div>
               )}
             </div>
@@ -650,7 +679,7 @@ export default function Dashboard() {
           {[...bookings].sort((a, b) => a.startMinutes - b.startMinutes).map((b) => {
             const chip = statusChip(b);
             const start = bookingStart(b);
-            const end = new Date(start.getTime() + b.durationMinutes * 60_000);
+            const end = new Date(start.getTime() + (b.durationMinutes + b.compMinutes) * 60_000);
             const check = canCheckIn(b, now);
             const noShowWaiting = isToday && b.status === "booked" && start <= now && end > now;
             const timeUp = b.status === "completed" && b.lightsOffAt;
@@ -672,6 +701,7 @@ export default function Dashboard() {
                   </span>
                 )}
                 {timeUp ? <span className="text-xs text-pb-dim">Time&apos;s up — lights went off at {b.lightsOffAt!.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span> : null}
+                {b.status === "checked_in" && b.lightsOffAt ? <span className="text-xs text-pb-dim">Ends {b.lightsOffAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{b.compMinutes > 0 ? ` · incl. +${b.compMinutes} min club delay` : ""}</span> : null}
                 {noShowWaiting && <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-bold text-red-500">No-show waiting</span>}
                 <span className="ml-auto flex flex-wrap items-center gap-2">
                   {b.status !== "cancelled" && <button onClick={() => setExpandedBookingId(expanded ? null : b.id)} className={btnCls}>{expanded ? "Hide payments" : "Payments"}</button>}
@@ -687,6 +717,7 @@ export default function Dashboard() {
                     <>
                       <button onClick={() => handleExtend(b, 30)} className={btnCls}>+30m</button>
                       <button onClick={() => handleExtend(b, 60)} className={btnCls}>+60m</button>
+                      <span className="flex items-center gap-1 text-xs font-semibold text-pb-dim" title="Free minutes when the delay was the club's fault — no charge, fee unchanged">Club delay {[5, 10, 15].map((mins) => <button key={mins} onClick={() => handleClubDelay(b, mins)} className={btnCls}>+{mins}m</button>)}</span>
                       <button onClick={() => handleEndSession(b)} className={btnCls}>End session</button>
                     </>
                   )}
@@ -815,7 +846,7 @@ export default function Dashboard() {
             {[...log].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 12).map((l) => (
               <li key={l.id} className="flex items-center gap-2">
                 <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${l.action === "on" ? "bg-pb-amber text-pb-amber-ink" : "bg-pb-surface2 text-pb-dim"}`}>{l.action.toUpperCase()}</span>
-                <span>{l.at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} — {l.courtName} lights {l.action}</span>
+                <span>{l.at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} — {l.detail ?? `${l.courtName} lights ${l.action}`}</span>
                 <span className="text-pb-dim">({l.reason.replace("_", " ")})</span>
               </li>
             ))}

@@ -45,9 +45,20 @@ export function canCheckIn(booking: Booking, now: Date, earlyMinutes = 15): { ok
   return { ok: true, message: "" };
 }
 
-/** Doc §3 timing rule: lights-off = check-in time + booked length. */
-export function lightsOffTime(checkedInAt: Date, durationMinutes: number): Date {
-  return new Date(checkedInAt.getTime() + durationMinutes * 60_000);
+/** The booked end of a session: booked start + booked length. Paid extensions
+ *  add their minutes to durationMinutes, so they are already included here. */
+export function bookedEnd(booking: Booking): Date {
+  return new Date(bookingStart(booking).getTime() + booking.durationMinutes * 60_000);
+}
+
+/** Timing rule (decided 2026-11-10): the session end is anchored to the BOOKED
+ *  end — booked start + duration (paid extensions included) + club-delay comp
+ *  minutes. Check-in time never moves the end: a player who checks in late
+ *  through his own fault loses that time, an early check-in inside the 15-min
+ *  window just turns the lights on sooner, and only paid extensions or free
+ *  club-delay comp push the end later. */
+export function sessionEnd(booking: Booking): Date {
+  return new Date(bookedEnd(booking).getTime() + booking.compMinutes * 60_000);
 }
 
 export function formatHour(h: number): string {
