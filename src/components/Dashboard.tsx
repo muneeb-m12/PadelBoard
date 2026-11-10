@@ -1154,7 +1154,7 @@ export default function Dashboard() {
               ? { fraction: (now.getTime() - (changeover.until.getTime() - settings.changeoverGraceMinutes * 60_000)) / (settings.changeoverGraceMinutes * 60_000), label: countdown(changeover.until, now), tone: "amber" as const }
               : { fraction: null, label: "—", tone: "dim" as const };
           return (
-            <div key={court.id} id={`court-card-${court.id}`} className={`panel-shadow rounded-[14px] border px-[18px] pb-3 pt-4 ${lightsOn ? "lit-glow border-pb-accent/60 bg-pb-accent/[0.07]" : "border-pb-border bg-pb-surface"} ${focusedCourtId === court.id ? "ring-2 ring-pb-accent/70" : ""}`}>
+            <div key={court.id} id={`court-card-${court.id}`} className={`panel-shadow rounded-[14px] border px-[18px] pb-3 pt-4 ${lightsOn ? "lit-glow border-pb-accent/30 bg-pb-accent/[0.05]" : "border-pb-border bg-pb-surface"} ${focusedCourtId === court.id ? "ring-2 ring-pb-accent/70" : ""}`}>
               <div className="flex items-center gap-4">
                 <ProgressRing fraction={ring.fraction} label={ring.label} tone={ring.tone} />
                 <div className="min-w-0 flex-1">
@@ -1205,12 +1205,22 @@ export default function Dashboard() {
             <h2 className="text-[15px] font-semibold">Performance trend</h2>
             <p className="text-xs text-pb-dim">Bookings per day · 7 days to {dateLabel} vs the 7 before</p>
           </div>
-          <div className="mt-4 flex h-36 items-end gap-2">
+          <div className="mt-4 flex h-32 items-end gap-2">
             {trendDays.map((d) => (
               <div key={d.iso} className="flex flex-1 flex-col items-center gap-1">
-                <div className="flex h-28 items-end gap-1">
-                  <div title={`Previous period: ${d.prev} booking${d.prev === 1 ? "" : "s"}`} className="w-3 rounded-t bg-pb-dim/40" style={{ height: `${d.prev === 0 ? 0 : Math.max(6, (d.prev / trendMax) * 100)}%` }} />
-                  <div title={`This period: ${d.cur} booking${d.cur === 1 ? "" : "s"}`} className="w-3 rounded-t bg-pb-accent" style={{ height: `${d.cur === 0 ? 0 : Math.max(6, (d.cur / trendMax) * 100)}%` }} />
+                <div className="flex h-24 items-end gap-1">
+                  {d.prev === 0 && d.cur === 0 ? (
+                    <div title="No bookings in either period" className="w-3 rounded-t border border-dashed border-pb-accent/40 bg-pb-accent/5" style={{ height: "10%" }} />
+                  ) : (
+                    <>
+                      {d.prev === 0
+                        ? <div title="Previous period: 0 bookings" className="w-3 rounded-t border border-dashed border-pb-dim/50 bg-pb-dim/5" style={{ height: "10%" }} />
+                        : <div title={`Previous period: ${d.prev} booking${d.prev === 1 ? "" : "s"}`} className="w-3 rounded-t bg-pb-dim/40" style={{ height: `${Math.max(6, (d.prev / trendMax) * 100)}%` }} />}
+                      {d.cur === 0
+                        ? <div title="This period: 0 bookings" className="w-3 rounded-t border border-dashed border-pb-accent/50 bg-pb-accent/5" style={{ height: "10%" }} />
+                        : <div title={`This period: ${d.cur} booking${d.cur === 1 ? "" : "s"}`} className="w-3 rounded-t bg-pb-accent" style={{ height: `${Math.max(6, (d.cur / trendMax) * 100)}%` }} />}
+                    </>
+                  )}
                 </div>
                 <span className="text-[10px] font-semibold text-pb-dim">{d.dow} {d.dayNum}</span>
               </div>
@@ -1249,32 +1259,25 @@ export default function Dashboard() {
             </div>
             <p className="mt-1.5 text-xs text-pb-dim">{collectedPct}% of the day&apos;s court fees collected (cancelled and no-show bookings excluded).</p>
           </div>
+          <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+            {[
+              ["Light hours", lightHours.toFixed(1)],
+              ["Electricity cost", `Rs ${Math.round(actualCost).toLocaleString()}`],
+              ["Saved today", `Rs ${Math.round(saved).toLocaleString()}`],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl bg-pb-surface2 px-2 py-2.5">
+                <p className="text-lg font-extrabold tabular-nums">{value}</p>
+                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-pb-dim">{label}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-pb-dim">Savings assume lights would otherwise stay on for all opening hours ({settings.openingHour}–{settings.closingHour}) on every court, at {settings.lightingPowerKw} kW × Rs {settings.electricityPricePerUnit}/unit. Light hours are summed from the day&apos;s light log.</p>
         </div>
-      </section>
-
-      {/* Today's numbers — Doc §6 */}
-      <section className="mt-6">
-        <h2 className="mb-2 text-[17px] font-semibold">{isToday ? "Today's numbers" : "Day numbers"}</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            ["Collected (court fees)", fmtRs(collectedToday)],
-            ["Outstanding (court fees)", fmtRs(outstandingToday)],
-            ["Light hours", lightHours.toFixed(1)],
-            ["Electricity cost", `Rs ${Math.round(actualCost).toLocaleString()}`],
-            ["Saved vs lights-on-all-day", `Rs ${Math.round(saved).toLocaleString()}`],
-            ["Utilization", `${utilization}%`],
-            ["Bookings", String(counts.total)],
-            ["Completed / no-shows", `${counts.completed} / ${counts.noShow}`],
-          ].map(([label, value]) => (
-            <div key={label} className="panel-shadow rounded-[14px] border border-pb-border bg-pb-surface p-5"><p className="text-xs font-semibold uppercase text-pb-dim">{label}</p><p className="mt-1 text-xl font-extrabold">{value}</p></div>
-          ))}
-        </div>
-        <p className="mt-2 text-xs text-pb-dim">Savings assume lights would otherwise stay on for all opening hours ({settings.openingHour}–{settings.closingHour}) on every court, at {settings.lightingPowerKw} kW × Rs {settings.electricityPricePerUnit}/unit. Light hours are summed from the day&apos;s light log.</p>
       </section>
 
       {/* Light log + settings */}
       <section className="mt-6 grid gap-6 md:grid-cols-2">
-        <div id="light-log" className="panel-shadow scroll-mt-4 rounded-[14px] border border-pb-border bg-pb-surface p-5">
+        <div id="light-log" className={`panel-shadow scroll-mt-4 rounded-[14px] border border-pb-border bg-pb-surface p-5 ${showSettings ? "" : "md:col-span-2"}`}>
           <h2 className="mb-3 text-[15px] font-semibold">Light log — {dateLabel}</h2>
           <ul className="space-y-1.5 text-sm">
             {[...log].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 12).map((l) => (
