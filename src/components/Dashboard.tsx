@@ -131,6 +131,7 @@ export default function Dashboard() {
   const [newCourtName, setNewCourtName] = useState("");
   const [form, setForm] = useState({ name: "", phone: "", courtId: "c1", dateISO: todayISO, startTime: "19:00", durationMinutes: 60, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, extraPlayers: [{ name: "", phone: "" }, { name: "", phone: "" }, { name: "", phone: "" }] as { name: string; phone: string }[] });
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  const [focusedCourtId, setFocusedCourtId] = useState<string | null>(null);
   const [shareMethods, setShareMethods] = useState<Record<string, PaymentMethod>>({});
   const completedRef = useRef<Set<string>>(new Set());
   const noShowRef = useRef<Set<string>>(new Set());
@@ -366,6 +367,29 @@ export default function Dashboard() {
   const collectedToday = moneyBookings.reduce((s, b) => s + paymentSummary(b).collected, 0);
   const outstandingToday = moneyBookings.reduce((s, b) => s + paymentSummary(b).outstanding, 0);
 
+  // ---- KICKS-style layout data (sidebar stats, hero card, trend panel) ----
+  const scrollToId = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const liveNowCount = isToday ? bookings.filter((b) => b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > now).length : 0;
+  const courtsLive = isToday ? courts.filter((c) => lightsOnFor(c, now)).length : 0;
+  const nextBooking = [...bookings]
+    .filter((b) => b.status === "booked" && (!isToday || bookingStart(b) > now))
+    .sort((a, b) => a.startMinutes - b.startMinutes)[0];
+  const trendCountFor = (iso: string) => (days[iso]?.bookings ?? []).filter((b) => b.status !== "cancelled").length;
+  const trendDays = Array.from({ length: 7 }, (_, i) => {
+    const iso = isoAddDays(selectedISO, i - 6);
+    return {
+      iso,
+      cur: trendCountFor(iso),
+      prev: trendCountFor(isoAddDays(iso, -7)),
+      dow: isoToDate(iso).toLocaleDateString([], { weekday: "narrow" }),
+      dayNum: isoToDate(iso).getDate(),
+    };
+  });
+  const trendMax = Math.max(1, ...trendDays.flatMap((d) => [d.cur, d.prev]));
+  const trendCurTotal = trendDays.reduce((s, d) => s + d.cur, 0);
+  const trendPrevTotal = trendDays.reduce((s, d) => s + d.prev, 0);
+  const collectedPct = collectedToday + outstandingToday > 0 ? Math.round((collectedToday / (collectedToday + outstandingToday)) * 100) : 0;
+
   const hours = Array.from({ length: settings.closingHour - settings.openingHour }, (_, i) => settings.openingHour + i);
   const durationValid = Math.floor(form.durationMinutes) >= 1 && Math.floor(form.durationMinutes) <= 1440;
   const dateLabel = (() => {
@@ -386,8 +410,57 @@ export default function Dashboard() {
     return { text: b.status.replace("_", " "), cls: "bg-pb-surface2" };
   };
 
+  const navItems: { label: string; glyph: string; action: () => void }[] = [
+    { label: "Dashboard", glyph: "⌂", action: () => window.scrollTo({ top: 0, behavior: "smooth" }) },
+    { label: "Courts", glyph: "◎", action: () => scrollToId("courts") },
+    { label: "Bookings", glyph: "▦", action: () => scrollToId("bookings") },
+    { label: "Payments", glyph: "◈", action: () => scrollToId("bookings") },
+    { label: "Light Log", glyph: "☰", action: () => scrollToId("light-log") },
+    { label: "Settings", glyph: "⚙", action: () => { setShowSettings(true); setTimeout(() => scrollToId("settings-panel"), 60); } },
+  ];
+
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 text-pb-text">
+    <div className="flex w-full text-pb-text">
+      {/* Sidebar — KICKS-style: wordmark, icon nav, day stats. Icon rail on
+          medium screens, full labels + stats on xl; hidden on phones, where
+          the header below carries the branding and actions. */}
+      <aside className="sticky top-0 hidden h-screen w-[72px] shrink-0 flex-col border-r border-pb-border bg-pb-surface md:flex xl:w-60">
+        <div className="px-3 py-5 text-center xl:px-5 xl:text-left">
+          <p className="text-xl font-black uppercase leading-none tracking-tight">Padel<span className="text-pb-amber">Board</span></p>
+          <p className="mt-1 hidden text-xs text-pb-dim xl:block">Demo Padel Club</p>
+        </div>
+        <nav className="flex flex-col gap-1 px-2 xl:px-3">
+          {navItems.map((item) => (
+            <button key={item.label} onClick={item.action} title={item.label} className="flex items-center justify-center gap-3 rounded-[10px] px-3 py-2 text-sm font-semibold hover:bg-pb-surface2 xl:justify-start">
+              <span aria-hidden className="w-5 text-center text-base leading-none">{item.glyph}</span>
+              <span className="hidden xl:inline">{item.label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="mt-auto px-3 pb-6">
+          <div className="text-center xl:hidden">
+            <p className="text-2xl font-black tabular-nums">{courtsLive}</p>
+            <p className="text-[10px] font-semibold uppercase text-pb-dim">courts live</p>
+          </div>
+          <div className="hidden space-y-3 xl:block">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-pb-dim">{isToday ? "Today at a glance" : "Selected day"}</p>
+            {[
+              ["Bookings", String(counts.total)],
+              ["Occupancy", `${utilization}%`],
+              ["Courts live now", String(courtsLive)],
+              ["Collected", fmtRs(collectedToday)],
+              ["Outstanding", fmtRs(outstandingToday)],
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-baseline justify-between gap-2">
+                <span className="text-xs font-semibold text-pb-dim">{label}</span>
+                <span className="text-sm font-black tabular-nums">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </aside>
+
+    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-black tracking-tight uppercase">PadelBoard</h1>
@@ -425,13 +498,92 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Hero band — night court visual (pure CSS/SVG) with a live club card */}
+      <section className="relative mt-6 h-56 overflow-hidden rounded-[10px] border border-pb-border sm:h-60">
+        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 800 260" preserveAspectRatio="xMidYMid slice" aria-hidden>
+          <defs>
+            <linearGradient id="pbSky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#060d08" />
+              <stop offset="60%" stopColor="#0b1d11" />
+              <stop offset="100%" stopColor="#0e2415" />
+            </linearGradient>
+            <radialGradient id="pbGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#ffc21f" stopOpacity="0.55" />
+              <stop offset="100%" stopColor="#ffc21f" stopOpacity="0" />
+            </radialGradient>
+            <linearGradient id="pbFloor" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#1d5c33" />
+              <stop offset="100%" stopColor="#123d21" />
+            </linearGradient>
+          </defs>
+          <rect width="800" height="260" fill="url(#pbSky)" />
+          <circle cx="140" cy="26" r="95" fill="url(#pbGlow)" />
+          <circle cx="660" cy="26" r="95" fill="url(#pbGlow)" />
+          <line x1="140" y1="18" x2="140" y2="96" stroke="#3f5546" strokeWidth="4" />
+          <line x1="660" y1="18" x2="660" y2="96" stroke="#3f5546" strokeWidth="4" />
+          <rect x="118" y="6" width="44" height="12" rx="3" fill="#ffc21f" opacity="0.9" />
+          <rect x="638" y="6" width="44" height="12" rx="3" fill="#ffc21f" opacity="0.9" />
+          <polygon points="250,92 550,92 622,242 178,242" fill="#ffffff" opacity="0.06" />
+          <polygon points="178,242 622,242 550,92 250,92" fill="url(#pbFloor)" />
+          <polygon points="216,226 584,226 540,106 260,106" fill="none" stroke="#e9f1e9" strokeWidth="3" opacity="0.85" />
+          <line x1="400" y1="106" x2="400" y2="226" stroke="#e9f1e9" strokeWidth="3" opacity="0.85" />
+          <line x1="243" y1="152" x2="557" y2="152" stroke="#e9f1e9" strokeWidth="2.5" opacity="0.7" />
+          <line x1="229" y1="192" x2="571" y2="192" stroke="#e9f1e9" strokeWidth="2.5" opacity="0.7" />
+          <line x1="222" y1="180" x2="578" y2="180" stroke="#050807" strokeWidth="7" opacity="0.9" />
+          <line x1="222" y1="176.5" x2="578" y2="176.5" stroke="#e9f1e9" strokeWidth="2" />
+        </svg>
+        <div className="absolute bottom-0 left-0 p-5">
+          <p className="text-2xl font-black uppercase leading-none tracking-tight drop-shadow sm:text-3xl">Demo Padel Club</p>
+          <p className="mt-1 max-w-[240px] text-xs font-medium text-white/75 sm:max-w-none sm:text-sm">Night padel — courts, lights and payments on one board.</p>
+        </div>
+        <div className="absolute right-3 top-3 w-52 max-w-[72%] rounded-[10px] border border-white/15 bg-black/45 p-3 text-white shadow-lg backdrop-blur-sm sm:right-4 sm:top-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-white/70">{isToday ? "Tonight at the club" : "On this day"}</p>
+          <p className="mt-1 text-xl font-black tabular-nums leading-none">{now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</p>
+          <p className="mt-2 text-xs font-semibold">{isToday ? `${liveNowCount} of ${courts.length} courts in use` : `${counts.total} booking${counts.total === 1 ? "" : "s"} on this day`}</p>
+          <p className="mt-0.5 text-xs text-white/75">
+            {nextBooking
+              ? <>Next: <span className="font-semibold text-white">{nextBooking.customerName}</span> · {courts.find((c) => c.id === nextBooking.courtId)?.name} · {formatMinutesOfDay(nextBooking.startMinutes)}</>
+              : "No upcoming bookings"}
+          </p>
+        </div>
+      </section>
+
+      {/* Court strip — tap a court to jump to its control card */}
+      <section className="mt-4 flex gap-3 overflow-x-auto pb-1" aria-label="Courts at a glance">
+        {courts.map((court) => {
+          const active = isToday ? liveSessionForCourt(court.id, now) : undefined;
+          const on = isToday && lightsOnFor(court, now);
+          const nowMin = now.getHours() * 60 + now.getMinutes();
+          const nextForCourt = [...bookings]
+            .filter((b) => b.courtId === court.id && b.status === "booked" && (!isToday || b.startMinutes > nowMin))
+            .sort((a, b) => a.startMinutes - b.startMinutes)[0];
+          const status = active
+            ? `In play · ${countdown(active.lightsOffAt, now)} left`
+            : on
+              ? "Lights on · manual override"
+              : nextForCourt
+                ? `Free · next ${formatMinutesOfDay(nextForCourt.startMinutes)}`
+                : "Free";
+          return (
+            <button key={court.id} onClick={() => { setFocusedCourtId(court.id); scrollToId(`court-card-${court.id}`); }}
+              className={`min-w-[176px] flex-1 rounded-[10px] border p-3 text-left ${on ? "border-pb-amber bg-pb-surface" : "border-pb-border bg-pb-surface"} hover:bg-pb-surface2`}>
+              <span className="flex items-center justify-between gap-2">
+                <span className="font-extrabold uppercase tracking-wide">{court.name}</span>
+                <span className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${on ? "pulse-dot bg-pb-amber" : "bg-pb-dim/50"}`} />
+              </span>
+              <span className="mt-1 block text-xs font-semibold text-pb-dim">{status}</span>
+            </button>
+          );
+        })}
+      </section>
+
       {/* Court cards — Doc §4 */}
-      <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <section id="courts" className="mt-6 grid scroll-mt-4 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {courts.map((court) => {
           const active = isToday ? activeForCourt(court.id) : undefined;
           const lightsOn = isToday && lightsOnFor(court, now);
           return (
-            <div key={court.id} className={`rounded-[10px] border p-4 ${lightsOn ? "lit-glow border-pb-amber bg-pb-amber text-pb-amber-ink" : "border-pb-border bg-pb-surface"}`}>
+            <div key={court.id} id={`court-card-${court.id}`} className={`rounded-[10px] border p-4 ${lightsOn ? "lit-glow border-pb-amber bg-pb-amber text-pb-amber-ink" : "border-pb-border bg-pb-surface"} ${focusedCourtId === court.id ? "ring-2 ring-pb-amber" : ""}`}>
               <div className="flex items-center justify-between">
                 <h2 className="font-extrabold uppercase tracking-wide">{court.name}</h2>
                 <span className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-bold ${lightsOn ? "bg-pb-amber-ink text-pb-amber" : "bg-pb-surface2 text-pb-dim"}`}>
@@ -491,7 +643,7 @@ export default function Dashboard() {
       </section>
 
       {/* Bookings list — Doc §4 */}
-      <section className="mt-8">
+      <section id="bookings" className="mt-8 scroll-mt-4">
         <h2 className="mb-2 font-extrabold uppercase tracking-wide">Bookings — {dateLabel}</h2>
         <div className="divide-y divide-pb-border rounded-[10px] border border-pb-border bg-pb-surface">
           {bookings.length === 0 && <p className="p-4 text-sm text-pb-dim">No bookings for this day yet.</p>}
@@ -601,9 +753,63 @@ export default function Dashboard() {
         <p className="mt-2 text-xs text-pb-dim">Savings assume lights would otherwise stay on for all opening hours ({settings.openingHour}–{settings.closingHour}) on every court, at {settings.lightingPowerKw} kW × Rs {settings.electricityPricePerUnit}/unit. Light hours are summed from the day&apos;s light log.</p>
       </section>
 
+      {/* Bottom panels — KICKS-style: performance trend + day state */}
+      <section className="mt-8 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-[10px] border border-pb-border bg-pb-surface p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-extrabold uppercase tracking-wide">Performance trend</h2>
+            <p className="text-xs text-pb-dim">Bookings per day · 7 days to {dateLabel} vs the 7 before</p>
+          </div>
+          <div className="mt-4 flex h-36 items-end gap-2">
+            {trendDays.map((d) => (
+              <div key={d.iso} className="flex flex-1 flex-col items-center gap-1">
+                <div className="flex h-28 items-end gap-1">
+                  <div title={`Previous period: ${d.prev} booking${d.prev === 1 ? "" : "s"}`} className="w-3 rounded-t bg-pb-dim/40" style={{ height: `${d.prev === 0 ? 0 : Math.max(6, (d.prev / trendMax) * 100)}%` }} />
+                  <div title={`This period: ${d.cur} booking${d.cur === 1 ? "" : "s"}`} className="w-3 rounded-t bg-emerald-500" style={{ height: `${d.cur === 0 ? 0 : Math.max(6, (d.cur / trendMax) * 100)}%` }} />
+                </div>
+                <span className="text-[10px] font-semibold text-pb-dim">{d.dow} {d.dayNum}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-pb-border pt-3 text-xs font-semibold">
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500" /> This 7 days · {trendCurTotal}</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-pb-dim/40" /> Previous 7 days · {trendPrevTotal}</span>
+            <span className={trendCurTotal >= trendPrevTotal ? "text-emerald-600" : "text-red-500"}>
+              {trendCurTotal >= trendPrevTotal ? "▲" : "▼"} {Math.abs(trendCurTotal - trendPrevTotal)} vs previous
+            </span>
+          </div>
+        </div>
+
+        <div className="rounded-[10px] border border-pb-border bg-pb-surface p-4">
+          <h2 className="font-extrabold uppercase tracking-wide">{isToday ? "Today at the club" : "This day at the club"}</h2>
+          <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+            {[
+              ["Bookings", String(counts.total)],
+              ["Live sessions", String(liveNowCount)],
+              ["No-shows", String(counts.noShow)],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-[10px] bg-pb-surface2 px-2 py-3">
+                <p className="text-2xl font-black tabular-nums">{value}</p>
+                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-pb-dim">{label}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4">
+            <div className="flex items-baseline justify-between text-sm">
+              <span className="font-semibold">Collected <span className="font-black">{fmtRs(collectedToday)}</span></span>
+              <span className="text-pb-dim">Outstanding <span className="font-bold text-pb-text">{fmtRs(outstandingToday)}</span></span>
+            </div>
+            <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-pb-surface2">
+              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${collectedPct}%` }} />
+            </div>
+            <p className="mt-1.5 text-xs text-pb-dim">{collectedPct}% of the day&apos;s court fees collected (cancelled and no-show bookings excluded).</p>
+          </div>
+        </div>
+      </section>
+
       {/* Light log + settings */}
       <section className="mt-8 grid gap-6 md:grid-cols-2">
-        <div className="rounded-[10px] border border-pb-border bg-pb-surface p-4">
+        <div id="light-log" className="scroll-mt-4 rounded-[10px] border border-pb-border bg-pb-surface p-4">
           <h2 className="mb-3 font-extrabold uppercase tracking-wide">Light log — {dateLabel}</h2>
           <ul className="space-y-1.5 text-sm">
             {[...log].sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 12).map((l) => (
@@ -618,7 +824,7 @@ export default function Dashboard() {
         </div>
 
         {showSettings && (
-          <div className="rounded-[10px] border border-pb-border bg-pb-surface p-4">
+          <div id="settings-panel" className="scroll-mt-4 rounded-[10px] border border-pb-border bg-pb-surface p-4">
             <h2 className="mb-3 font-extrabold uppercase tracking-wide">Club settings (Doc §6.1)</h2>
             <div className="grid grid-cols-2 gap-3">
               <label className="block text-sm">Lighting power / court (kW)
@@ -715,5 +921,6 @@ export default function Dashboard() {
 
       <footer className="mt-10 border-t border-pb-border pt-4 text-xs text-pb-dim">PadelBoard — bookings, court lights and payments, all in one place.</footer>
     </main>
+    </div>
   );
 }
