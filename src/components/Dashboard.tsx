@@ -148,7 +148,30 @@ export default function Dashboard() {
   const [now, setNow] = useState(() => new Date());
   const todayISO = isoFromDate(now);
   const [selectedISO, setSelectedISO] = useState<string>(() => isoFromDate(new Date()));
-  const [notice, setNotice] = useState("");
+  // Transient action notices ("Court 2 lights OFF manually."): each one pops
+  // as a toast and is kept in the notification panel until it has been read.
+  const [notices, setNotices] = useState<{ id: string; text: string; read: boolean }[]>([]);
+  const [toast, setToast] = useState<{ id: string; text: string } | null>(null);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [focusedBookingId, setFocusedBookingId] = useState<string | null>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const setNotice = (text: string) => {
+    if (!text) return;
+    const item = { id: uid(), text, read: false };
+    setNotices((prev) => [item, ...prev].slice(0, 10));
+    setToast(item);
+  };
+  const closeNotifications = () => {
+    setShowNotifications(false);
+    setNotices((prev) => prev.filter((n) => !n.read));
+  };
+  const toggleNotifications = () => {
+    if (showNotifications) closeNotifications();
+    else {
+      setShowNotifications(true);
+      setNotices((prev) => prev.map((n) => ({ ...n, read: true })));
+    }
+  };
   const [showForm, setShowForm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -197,6 +220,29 @@ export default function Dashboard() {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("pb-theme", theme);
   }, [theme]);
+
+  // Toast auto-dismiss (~6s). The notice itself stays in the notification
+  // panel until the panel is opened and it is marked read.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast((cur) => (cur && cur.id === toast.id ? null : cur)), 6000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // Notification panel: close on outside click or Escape.
+  useEffect(() => {
+    if (!showNotifications) return;
+    const onDown = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) closeNotifications();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeNotifications(); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [showNotifications]);
 
   // A session is live only until its lights-off time (= sessionEnd: the booked
   // end + comp minutes); light state is DERIVED from this, never stored — a
@@ -330,27 +376,32 @@ export default function Dashboard() {
 
   const activeForCourt = (courtId: string) => liveSessionForCourt(courtId, now);
 
-  // Alerts for the selected day (live ones only make sense today)
-  const alerts: string[] = [];
+  // Alerts for the selected day (live ones only make sense today). These are
+  // STANDING alerts: they live in the header notification panel and clear
+  // themselves when the underlying condition resolves — never dismissible.
+  interface StandingAlert { id: string; text: string; severity: "alert" | "info"; bookingId?: string; courtId?: string }
+  const alerts: StandingAlert[] = [];
   if (isToday) {
     for (const b of bookings) {
       if (b.status === "checked_in" && b.lightsOffAt && b.lightsOffAt.getTime() - now.getTime() <= 5 * 60_000 && b.lightsOffAt > now)
-        alerts.push(`${b.customerName} on ${courts.find((c) => c.id === b.courtId)?.name} ends in ${countdown(b.lightsOffAt, now)} — offer an extension.`);
+        alerts.push({ id: `ending-${b.id}`, severity: "info", bookingId: b.id, text: `${b.customerName} on ${courts.find((c) => c.id === b.courtId)?.name} ends in ${countdown(b.lightsOffAt, now)} — offer an extension.` });
       if (b.status === "booked" && bookingStart(b) <= now && bookingStart(b).getTime() + b.durationMinutes * 60_000 > now.getTime())
-        alerts.push(`${b.customerName} has not checked in (${formatMinutesOfDay(b.startMinutes)} booking) — release the slot if they're a no-show.`);
+        alerts.push({ id: `noshow-${b.id}`, severity: "alert", bookingId: b.id, text: `${b.customerName} has not checked in (${formatMinutesOfDay(b.startMinutes)} booking) — release the slot if they're a no-show.` });
       const pay = paymentSummary(b);
       if ((b.status === "booked" || b.status === "checked_in") && pay.outstanding > 0) {
         const unpaidNames = b.shares.filter((s) => !s.paid).map((s) => s.name).join(", ");
         if (b.status === "checked_in")
-          alerts.push(`${fmtRs(pay.outstanding)} still unpaid on ${b.customerName}'s live session — ${unpaidNames} ${b.shares.filter((s) => !s.paid).length === 1 ? "has" : "have"} not paid. Collect at the counter or send a WhatsApp reminder from Payments.`);
+          alerts.push({ id: `unpaid-live-${b.id}`, severity: "alert", bookingId: b.id, text: `${fmtRs(pay.outstanding)} still unpaid on ${b.customerName}'s live session — ${unpaidNames} ${b.shares.filter((s) => !s.paid).length === 1 ? "has" : "have"} not paid. Collect at the counter or send a WhatsApp reminder from Payments.` });
         else if (bookingStart(b).getTime() - now.getTime() <= 3 * 60 * 60_000 && bookingStart(b).getTime() + b.durationMinutes * 60_000 > now.getTime())
-          alerts.push(`${fmtRs(pay.outstanding)} unpaid for ${b.customerName}'s booking at ${formatMinutesOfDay(b.startMinutes)} — unpaid: ${unpaidNames}. Send reminders from Payments.`);
+          alerts.push({ id: `unpaid-${b.id}`, severity: "alert", bookingId: b.id, text: `${fmtRs(pay.outstanding)} unpaid for ${b.customerName}'s booking at ${formatMinutesOfDay(b.startMinutes)} — unpaid: ${unpaidNames}. Send reminders from Payments.` });
       }
     }
     for (const c of courts)
       if (lightsOnFor(c, now) && !activeForCourt(c.id) && !c.manualOverride && !changeoverForCourt(c.id, now))
-        alerts.push(`${c.name} lights are on with no active session.`);
+        alerts.push({ id: `lights-${c.id}`, severity: "alert", courtId: c.id, text: `${c.name} lights are on with no active session.` });
   }
+  const unreadNotices = notices.filter((n) => !n.read).length;
+  const badgeCount = alerts.length + unreadNotices;
 
   function openForm(courtId?: string, startMinutes?: number, dateISO?: string) {
     setForm((f) => ({
@@ -578,6 +629,21 @@ export default function Dashboard() {
     { label: "Settings", glyph: "⚙", action: () => { setShowSettings(true); setTimeout(() => scrollToId("settings-panel"), 60); } },
   ];
 
+  // Clicking a standing alert in the notification panel jumps to the thing it
+  // is about: unpaid alerts also open that booking's Payments panel (where
+  // the WhatsApp reminders live); the lights alert jumps to the court card.
+  const handleAlertClick = (a: StandingAlert) => {
+    closeNotifications();
+    if (a.bookingId) {
+      if (a.id.startsWith("unpaid")) setExpandedBookingId(a.bookingId);
+      setFocusedBookingId(a.bookingId);
+      setTimeout(() => scrollToId(`booking-row-${a.bookingId}`), 60);
+    } else if (a.courtId) {
+      setFocusedCourtId(a.courtId);
+      setTimeout(() => scrollToId(`court-card-${a.courtId}`), 60);
+    }
+  };
+
   return (
     <div className="flex w-full text-pb-text">
       {/* Sidebar — KICKS-style: wordmark, icon nav, day stats. Icon rail on
@@ -626,6 +692,46 @@ export default function Dashboard() {
           <p className="text-sm text-pb-dim">Demo Padel Club</p>
         </div>
         <div className="flex gap-2">
+          {/* Notification bell: standing alerts + unread action notices */}
+          <div className="relative" ref={notifRef}>
+            <button onClick={toggleNotifications} className={`${btnCls} relative`} title="Notifications" aria-label="Notifications" aria-expanded={showNotifications}>
+              <svg viewBox="0 0 24 24" fill="currentColor" className="block h-5 w-5" aria-hidden><path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" /></svg>
+              {badgeCount > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-black leading-none text-white">{badgeCount}</span>
+              )}
+            </button>
+            {showNotifications && (
+              <div className="absolute right-0 top-full z-50 mt-2 max-h-[70vh] w-[min(92vw,380px)] overflow-y-auto rounded-[10px] border border-pb-border bg-pb-surface p-3 text-left shadow-2xl">
+                <p className="flex items-baseline justify-between px-1 pb-2">
+                  <span className="text-sm font-extrabold uppercase tracking-wide">Notifications</span>
+                  {badgeCount > 0 && <span className="text-xs font-semibold text-pb-dim">{alerts.length} active{unreadNotices > 0 ? ` · ${unreadNotices} new` : ""}</span>}
+                </p>
+                {alerts.length === 0 && notices.length === 0 && (
+                  <p className="px-1 py-3 text-sm text-pb-dim">All clear — no notifications.</p>
+                )}
+                {alerts.length > 0 && (
+                  <div className="space-y-2">
+                    {alerts.map((a) => (
+                      <button key={a.id} onClick={() => handleAlertClick(a)} title="Jump to it"
+                        className={`flex w-full items-start gap-2 rounded-[10px] border px-3 py-2 text-left text-[13px] font-medium leading-snug ${a.severity === "alert" ? "border-red-500/50 bg-red-500/10 hover:bg-red-500/15" : "border-pb-amber bg-pb-amber/15 hover:bg-pb-amber/20"}`}>
+                        <span aria-hidden>{a.severity === "alert" ? "⚠" : "◷"}</span><span>{a.text}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {notices.length > 0 && (
+                  <div className={alerts.length > 0 ? "mt-3" : ""}>
+                    <p className="px-1 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-pb-dim">Recent activity</p>
+                    <div className="space-y-2">
+                      {notices.map((n) => (
+                        <div key={n.id} className={`rounded-[10px] border border-pb-border bg-pb-surface2 px-3 py-2 text-[13px] font-medium leading-snug ${n.read ? "opacity-70" : ""}`}>{n.text}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <button onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))} className={btnCls} title="Switch theme">{theme === "dark" ? "☀ Light" : "☾ Dark"}</button>
           <button onClick={() => setShowSettings((s) => !s)} className={btnCls}>Club settings</button>
           <button onClick={() => openForm()} className="rounded-[10px] bg-pb-amber px-4 py-2 text-sm font-extrabold text-pb-amber-ink">+ Add booking</button>
@@ -644,18 +750,6 @@ export default function Dashboard() {
           Live · {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
         </span>
       </div>
-
-      {notice && <div className="mt-4 rounded-[10px] border border-pb-amber bg-pb-amber/15 px-4 py-2 text-sm font-medium">{notice}</div>}
-
-      {alerts.length > 0 && (
-        <div className="mt-4 space-y-2">
-          {alerts.map((a, i) => (
-            <div key={i} className="flex items-start gap-2 rounded-[10px] border border-red-500/50 bg-red-500/10 px-4 py-2 text-sm font-medium">
-              <span aria-hidden>⚠</span><span>{a}</span>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Hero band — night court visual (pure CSS/SVG) with a live club card */}
       <section className="relative mt-6 h-56 overflow-hidden rounded-[10px] border border-pb-border sm:h-60">
@@ -835,7 +929,7 @@ export default function Dashboard() {
             const expanded = expandedBookingId === b.id;
             const courtName = courts.find((c) => c.id === b.courtId)?.name ?? "Court";
             return (
-              <div key={b.id} className="p-3 text-sm">
+              <div key={b.id} id={`booking-row-${b.id}`} className={`scroll-mt-4 p-3 text-sm ${focusedBookingId === b.id ? "bg-pb-amber/10" : ""}`}>
               <div className="flex flex-wrap items-center gap-3">
                 <span className="font-mono font-semibold">{formatMinutesOfDay(b.startMinutes)}–{formatMinutesOfDay(b.startMinutes + b.durationMinutes)}</span>
                 <span className="text-pb-dim">({formatDuration(b.durationMinutes)})</span>
@@ -1035,6 +1129,15 @@ export default function Dashboard() {
           </div>
         )}
       </section>
+
+      {/* Action-notice toast: auto-dismisses after ~6s; the notice itself
+          stays in the notification panel until it has been read. */}
+      {toast && (
+        <div className="fixed bottom-4 right-4 z-50 flex w-[min(92vw,380px)] items-start gap-3 rounded-[10px] border border-pb-amber bg-pb-surface px-4 py-3 shadow-2xl">
+          <p className="flex-1 text-sm font-medium leading-snug">{toast.text}</p>
+          <button onClick={() => setToast(null)} className="-mr-1 -mt-0.5 text-xl leading-none text-pb-dim" aria-label="Dismiss notification">×</button>
+        </div>
+      )}
 
       {/* Booking modal */}
       {showForm && (
