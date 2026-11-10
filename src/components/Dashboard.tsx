@@ -143,6 +143,7 @@ const chipCls = "rounded-full border border-pb-border bg-pb-surface2 px-2.5 py-0
 
 export default function Dashboard() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [bookingsView, setBookingsView] = useState<"grid" | "list">("grid");
   const [days, setDays] = useState<Record<string, DayData>>(() => seedAll());
   const [settings, setSettings] = useState<ClubSettings>({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23, courtRatePerHour: DEFAULT_RATE_PER_HOUR, changeoverGraceMinutes: 3 });
   const [now, setNow] = useState(() => new Date());
@@ -220,6 +221,16 @@ export default function Dashboard() {
     document.documentElement.dataset.theme = theme;
     window.localStorage.setItem("pb-theme", theme);
   }, [theme]);
+
+  // Bookings view: grid by default; restore the saved choice like the theme.
+  useEffect(() => {
+    const saved = window.localStorage.getItem("pb-bookings-view");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore of the saved view on mount
+    if (saved === "grid" || saved === "list") setBookingsView(saved);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem("pb-bookings-view", bookingsView);
+  }, [bookingsView]);
 
   // Toast auto-dismiss (~6s). The notice itself stays in the notification
   // panel until the panel is opened and it is marked read.
@@ -599,6 +610,41 @@ export default function Dashboard() {
   const trendPrevTotal = trendDays.reduce((s, d) => s + d.prev, 0);
   const collectedPct = collectedToday + outstandingToday > 0 ? Math.round((collectedToday / (collectedToday + outstandingToday)) * 100) : 0;
 
+  // ---- Schedule grid (court × time) ----
+  // Blocks sit at their TRUE start/duration (flexible bookings are not
+  // snapped to hours); the visible range covers the day's bookings with an
+  // hour of padding, and never shows less than the club's opening hours.
+  const GRID_PX_PER_MIN = 64 / 60; // one hour row = 64px
+  const gridBookings = bookings.filter((b) => b.status !== "cancelled");
+  let gridStartMin = settings.openingHour * 60;
+  let gridEndMin = settings.closingHour * 60;
+  if (gridBookings.length > 0) {
+    const earliest = Math.min(...gridBookings.map((b) => b.startMinutes));
+    const latest = Math.max(...gridBookings.map((b) => b.startMinutes + b.durationMinutes + b.compMinutes));
+    gridStartMin = Math.max(0, Math.min(gridStartMin, Math.floor((earliest - 60) / 30) * 30));
+    gridEndMin = Math.min(1440, Math.max(gridEndMin, Math.ceil((latest + 60) / 30) * 30));
+  }
+  if (gridEndMin - gridStartMin < 180) gridEndMin = Math.min(1440, gridStartMin + 180);
+  const gridHeightPx = (gridEndMin - gridStartMin) * GRID_PX_PER_MIN;
+  const gridHourMarks: number[] = [];
+  for (let t = Math.ceil(gridStartMin / 60) * 60; t < gridEndMin; t += 60) gridHourMarks.push(t);
+  if (gridHourMarks[gridHourMarks.length - 1] !== gridEndMin) gridHourMarks.push(gridEndMin);
+  const nowMinToday = now.getHours() * 60 + now.getMinutes();
+  const showNowLine = isToday && nowMinToday >= gridStartMin && nowMinToday <= gridEndMin;
+  // Block styling reuses the same derivations as the list/court cards:
+  // live = checked in and inside the booked window; pending = checked in
+  // early, lights still off until the booked start.
+  const gridBlockState = (b: Booking): { cls: string; note: string; live: boolean; pending: boolean; pay: ReturnType<typeof paymentSummary> } => {
+    const pay = paymentSummary(b);
+    const live = isToday && b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > now && bookingStart(b) <= now;
+    if (live) return { cls: "lit-glow border-emerald-300 bg-emerald-500 text-white", note: "", live, pending: false, pay };
+    const pending = isToday && b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > now && bookingStart(b) > now;
+    if (pending) return { cls: "border-pb-amber bg-pb-surface2 text-pb-text", note: "", live, pending, pay };
+    if (b.status === "no_show") return { cls: "border-red-500/60 bg-red-500/10 text-pb-dim", note: "no-show", live, pending, pay };
+    if (b.status === "completed" || b.status === "checked_in") return { cls: "border-pb-border bg-pb-surface2 text-pb-dim", note: "", live, pending, pay };
+    return { cls: "border-emerald-600/50 bg-emerald-500/10 text-pb-text", note: "", live, pending, pay };
+  };
+
   const hours = Array.from({ length: settings.closingHour - settings.openingHour }, (_, i) => settings.openingHour + i);
   const durationValid = Math.floor(form.durationMinutes) >= 1 && Math.floor(form.durationMinutes) <= 1440;
   const dateLabel = (() => {
@@ -642,6 +688,17 @@ export default function Dashboard() {
       setFocusedCourtId(a.courtId);
       setTimeout(() => scrollToId(`court-card-${a.courtId}`), 60);
     }
+  };
+
+  // Clicking a grid block reuses the list's machinery exactly like the
+  // bell's click-to-jump: open the booking's Payments panel in the list and
+  // scroll to its row, where Check-in / Club delay / Extend / End session
+  // and the share controls all live.
+  const handleGridBlockClick = (b: Booking) => {
+    setExpandedBookingId(b.id);
+    setFocusedBookingId(b.id);
+    setBookingsView("list");
+    setTimeout(() => scrollToId(`booking-row-${b.id}`), 60);
   };
 
   return (
@@ -913,9 +970,91 @@ export default function Dashboard() {
         <p className="mt-1 text-xs text-pb-dim">Tap a free slot to create a booking for it.</p>
       </section>
 
-      {/* Bookings list — Doc §4 */}
+      {/* Bookings — Doc §4: court × time schedule grid by default, list one tap away */}
       <section id="bookings" className="mt-8 scroll-mt-4">
-        <h2 className="mb-2 font-extrabold uppercase tracking-wide">Bookings — {dateLabel}</h2>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <h2 className="font-extrabold uppercase tracking-wide">Bookings — {dateLabel}</h2>
+          <span className="ml-auto flex overflow-hidden rounded-[10px] border border-pb-border" role="group" aria-label="Bookings view">
+            <button onClick={() => setBookingsView("grid")} aria-pressed={bookingsView === "grid"} className={bookingsView === "grid" ? "bg-pb-amber px-3 py-1.5 text-sm font-bold text-pb-amber-ink" : "bg-pb-surface px-3 py-1.5 text-sm font-semibold hover:bg-pb-surface2"}>▦ Grid</button>
+            <button onClick={() => setBookingsView("list")} aria-pressed={bookingsView === "list"} className={bookingsView === "list" ? "bg-pb-amber px-3 py-1.5 text-sm font-bold text-pb-amber-ink" : "bg-pb-surface px-3 py-1.5 text-sm font-semibold hover:bg-pb-surface2"}>☰ List</button>
+          </span>
+        </div>
+        {bookingsView === "grid" ? (
+          <>
+            <div className="overflow-x-auto rounded-[10px] border border-pb-border bg-pb-surface">
+              <div style={{ minWidth: `${56 + courts.length * 172}px` }}>
+                {/* Court header row */}
+                <div className="flex border-b border-pb-border">
+                  <div className="shrink-0" style={{ width: 56 }} />
+                  {courts.map((c) => (
+                    <div key={c.id} className="flex-1 border-l border-pb-border px-2 py-2 text-center">
+                      <p className="text-sm font-extrabold uppercase tracking-wide">{c.name}</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-pb-dim">LED · {settings.lightingPowerKw} kW</p>
+                    </div>
+                  ))}
+                </div>
+                {/* Time body: hour + half-hour gridlines, blocks at true positions */}
+                <div className="relative flex" style={{ height: gridHeightPx }}>
+                  <div className="relative shrink-0" style={{ width: 56 }}>
+                    {gridHourMarks.map((t) => (
+                      <span key={t} className="absolute right-2 whitespace-nowrap text-[11px] font-semibold text-pb-dim" style={{ top: (t - gridStartMin) * GRID_PX_PER_MIN, transform: t === gridEndMin ? "translateY(-100%)" : "translateY(-50%)" }}>{formatMinutesOfDay(t)}</span>
+                    ))}
+                    {showNowLine && (
+                      <span className="absolute right-0.5 z-30 whitespace-nowrap rounded-full bg-red-500 px-1.5 py-px text-[10px] font-black text-white" style={{ top: (nowMinToday - gridStartMin) * GRID_PX_PER_MIN, transform: "translateY(-50%)" }}>{now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+                    )}
+                  </div>
+                  <div className="relative flex flex-1" style={{ backgroundImage: "linear-gradient(to bottom, var(--border) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--border) 40%, transparent) 1px, transparent 1px)", backgroundSize: `100% ${60 * GRID_PX_PER_MIN}px, 100% ${30 * GRID_PX_PER_MIN}px` }}>
+                    {courts.map((c) => {
+                      const co = isToday && !c.manualOverride ? changeoverForCourt(c.id, now) : undefined;
+                      const coEndMin = co && co.prev.lightsOffAt ? co.prev.lightsOffAt.getHours() * 60 + co.prev.lightsOffAt.getMinutes() : 0;
+                      return (
+                        <div key={c.id} title="Tap an empty time to create a booking for it" className="relative flex-1 border-l border-pb-border"
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const mins = gridStartMin + Math.floor(((e.clientY - rect.top) / GRID_PX_PER_MIN) / 30) * 30;
+                            openForm(c.id, Math.max(gridStartMin, Math.min(mins, gridEndMin - 30)), selectedISO);
+                          }}>
+                          {gridBookings.filter((b) => b.courtId === c.id).map((b) => {
+                            const st = gridBlockState(b);
+                            const height = Math.max(20, b.durationMinutes * GRID_PX_PER_MIN - 2);
+                            return (
+                              <button key={b.id} onClick={(e) => { e.stopPropagation(); handleGridBlockClick(b); }}
+                                title={`${b.customerName} · ${formatMinutesOfDay(b.startMinutes)}–${formatMinutesOfDay(b.startMinutes + b.durationMinutes)} — tap for details and payments`}
+                                className={`absolute inset-x-1 z-10 overflow-hidden rounded-md border px-1.5 py-1 text-left ${st.cls}`}
+                                style={{ top: (b.startMinutes - gridStartMin) * GRID_PX_PER_MIN + 1, height }}>
+                                <span className="block truncate text-xs font-bold leading-tight">{b.customerName}</span>
+                                <span className="block truncate text-[10px] leading-tight opacity-80">{formatMinutesOfDay(b.startMinutes)} – {formatMinutesOfDay(b.startMinutes + b.durationMinutes)}{st.note ? ` · ${st.note}` : ""}</span>
+                                {st.live && height >= 46 && <span className="mt-0.5 inline-block rounded-full bg-pb-amber px-1.5 py-px text-[9px] font-black text-pb-amber-ink">● LIVE · LIGHTS ON</span>}
+                                {st.pending && height >= 46 && <span className="mt-0.5 inline-block rounded-full bg-pb-amber px-1.5 py-px text-[9px] font-black text-pb-amber-ink">LIGHTS ON AT {formatMinutesOfDay(b.startMinutes)}</span>}
+                                {!st.live && st.pay.outstanding > 0 && b.status !== "no_show" && height >= 46 && <span className="mt-0.5 inline-block rounded-full bg-red-500 px-1.5 py-px text-[9px] font-black text-white">{fmtRs(st.pay.outstanding)} UNPAID</span>}
+                              </button>
+                            );
+                          })}
+                          {co && (
+                            <div onClick={(e) => e.stopPropagation()} title={`Changeover — lights held for ${co.next.customerName}`}
+                              className="absolute inset-x-0 z-20 flex items-center justify-center"
+                              style={{ top: (coEndMin - gridStartMin) * GRID_PX_PER_MIN - 7, height: 14, backgroundImage: "repeating-linear-gradient(45deg, var(--amber) 0 6px, rgba(0,0,0,0.55) 6px 12px)" }}>
+                              <span className="whitespace-nowrap bg-black/60 px-1 text-[9px] font-black uppercase tracking-wide text-white">Changeover · {settings.changeoverGraceMinutes} min</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {showNowLine && <div className="pointer-events-none absolute inset-x-0 z-30 border-t-2 border-red-500" style={{ top: (nowMinToday - gridStartMin) * GRID_PX_PER_MIN }} />}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-pb-dim">
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500" /> Live</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm border border-emerald-600/50 bg-emerald-500/15" /> Booked</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-pb-surface2" /> Completed</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500/50" /> No-show</span>
+              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundImage: "repeating-linear-gradient(45deg, var(--amber) 0 3px, rgba(0,0,0,0.5) 3px 6px)" }} /> Changeover</span>
+              <span className="ml-auto">Tap a booking for its details and payments · tap an empty time to book it</span>
+            </div>
+          </>
+        ) : (
         <div className="divide-y divide-pb-border rounded-[10px] border border-pb-border bg-pb-surface">
           {bookings.length === 0 && <p className="p-4 text-sm text-pb-dim">No bookings for this day yet.</p>}
           {[...bookings].sort((a, b) => a.startMinutes - b.startMinutes).map((b) => {
@@ -1004,6 +1143,7 @@ export default function Dashboard() {
             );
           })}
         </div>
+        )}
       </section>
 
       {/* Today's numbers — Doc §6 */}
