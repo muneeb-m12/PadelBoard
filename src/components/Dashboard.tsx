@@ -144,6 +144,7 @@ const chipCls = "rounded-full border border-pb-border bg-pb-surface2 px-2.5 py-0
 export default function Dashboard() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [bookingsView, setBookingsView] = useState<"grid" | "list">("grid");
+  const [gridFilter, setGridFilter] = useState<"all" | "live" | "booked" | "completed" | "no_show">("all");
   const [days, setDays] = useState<Record<string, DayData>>(() => seedAll());
   const [settings, setSettings] = useState<ClubSettings>({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23, courtRatePerHour: DEFAULT_RATE_PER_HOUR, changeoverGraceMinutes: 3 });
   const [now, setNow] = useState(() => new Date());
@@ -634,16 +635,21 @@ export default function Dashboard() {
   // Block styling reuses the same derivations as the list/court cards:
   // live = checked in and inside the booked window; pending = checked in
   // early, lights still off until the booked start.
-  const gridBlockState = (b: Booking): { cls: string; note: string; live: boolean; pending: boolean; pay: ReturnType<typeof paymentSummary> } => {
+  const gridBlockState = (b: Booking): { cls: string; note: string; live: boolean; pending: boolean; kind: "live" | "booked" | "completed" | "no_show"; pay: ReturnType<typeof paymentSummary> } => {
     const pay = paymentSummary(b);
     const live = isToday && b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > now && bookingStart(b) <= now;
-    if (live) return { cls: "live-block border-transparent text-white", note: "", live, pending: false, pay };
+    if (live) return { cls: "live-block border-transparent text-white", note: "", live, pending: false, kind: "live", pay };
     const pending = isToday && b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > now && bookingStart(b) > now;
-    if (pending) return { cls: "border-pb-amber bg-pb-surface2 text-pb-text", note: "", live, pending, pay };
-    if (b.status === "no_show") return { cls: "border-red-500/60 bg-red-500/10 text-pb-dim", note: "no-show", live, pending, pay };
-    if (b.status === "completed" || b.status === "checked_in") return { cls: "border-pb-border bg-pb-surface2 text-pb-dim", note: "", live, pending, pay };
-    return { cls: "border-pb-accent/60 bg-pb-booked text-pb-booked-text", note: "", live, pending, pay };
+    if (pending) return { cls: "border-pb-amber bg-pb-surface2 text-pb-text", note: "", live, pending, kind: "booked", pay };
+    if (b.status === "no_show") return { cls: "border-red-500/60 bg-red-500/10 text-pb-dim", note: "no-show", live, pending, kind: "no_show", pay };
+    if (b.status === "completed" || b.status === "checked_in") return { cls: "border-pb-border bg-pb-surface2 text-pb-dim", note: "", live, pending, kind: "completed", pay };
+    return { cls: "border-pb-accent/60 bg-pb-booked text-pb-booked-text", note: "", live, pending, kind: "booked", pay };
   };
+  // Filter chips under the grid: counts classify every block through the
+  // same gridBlockState derivation the blocks themselves render with
+  // (pending blocks count as Booked — they are upcoming bookings).
+  const gridFilterCounts: Record<"all" | "live" | "booked" | "completed" | "no_show", number> = { all: gridBookings.length, live: 0, booked: 0, completed: 0, no_show: 0 };
+  for (const b of gridBookings) gridFilterCounts[gridBlockState(b).kind] += 1;
 
   const hours = Array.from({ length: settings.closingHour - settings.openingHour }, (_, i) => settings.openingHour + i);
   const durationValid = Math.floor(form.durationMinutes) >= 1 && Math.floor(form.durationMinutes) <= 1440;
@@ -904,6 +910,7 @@ export default function Dashboard() {
                           }}>
                           {gridBookings.filter((b) => b.courtId === c.id).map((b) => {
                             const st = gridBlockState(b);
+                            if (gridFilter !== "all" && st.kind !== gridFilter) return null;
                             const height = Math.max(20, b.durationMinutes * GRID_PX_PER_MIN - 2);
                             return (
                               <button key={b.id} onClick={(e) => { e.stopPropagation(); handleGridBlockClick(b); }}
@@ -933,13 +940,24 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs font-semibold text-pb-dim">
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-pb-accent" /> Live</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm border border-pb-accent/60 bg-pb-booked" /> Booked</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-pb-surface2" /> Completed</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500/50" /> No-show</span>
-              <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ backgroundImage: "repeating-linear-gradient(45deg, var(--amber) 0 3px, rgba(0,0,0,0.5) 3px 6px)" }} /> Changeover</span>
-              <span className="ml-auto">Tap a booking for its details and payments · tap an empty time to book it</span>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter grid by booking state" data-grid-filters>
+              {([
+                { key: "all", label: "All", dotCls: "bg-pb-dim", activeDotCls: "bg-white" },
+                { key: "live", label: "Live", dotCls: "bg-pb-accent", activeDotCls: "bg-white" },
+                { key: "booked", label: "Booked", dotCls: "border border-pb-accent/60 bg-pb-booked", activeDotCls: "border border-white/70 bg-white/30" },
+                { key: "completed", label: "Completed", dotCls: "border border-pb-border bg-pb-surface2", activeDotCls: "border border-white/70 bg-white/30" },
+                { key: "no_show", label: "No-show", dotCls: "bg-red-500/50", activeDotCls: "bg-red-200" },
+              ] as const).map((f) => {
+                const active = gridFilter === f.key;
+                return (
+                  <button key={f.key} onClick={() => setGridFilter(f.key)} aria-pressed={active}
+                    className={active ? "flex items-center gap-1.5 rounded-full bg-pb-accent px-2.5 py-1 text-xs font-bold text-white" : "flex items-center gap-1.5 rounded-full border border-pb-border bg-pb-surface px-2.5 py-1 text-xs font-semibold text-pb-dim hover:bg-pb-surface2"}>
+                    <span className={`inline-block h-2.5 w-2.5 rounded-sm ${active ? f.activeDotCls : f.dotCls}`} />
+                    {f.label} {gridFilterCounts[f.key]}
+                  </button>
+                );
+              })}
+              <span className="ml-auto text-xs font-semibold text-pb-dim">Tap a booking for its details and payments · tap an empty time to book it</span>
             </div>
           </>
         ) : (
