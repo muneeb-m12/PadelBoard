@@ -592,24 +592,8 @@ export default function Dashboard() {
     setNotice("Demo data reset.");
   }
 
-  // ---- Day numbers (Doc §6): real light-hours from the day's log pairs ----
+  // ---- Day numbers ----
   const openMinutes = (settings.closingHour - settings.openingHour) * 60;
-  let lightMinutes = 0;
-  {
-    const sorted = [...log].sort((a, b) => a.at.getTime() - b.at.getTime());
-    const onSince = new Map<string, number>();
-    for (const e of sorted) {
-      if (e.action === "on") { if (!onSince.has(e.courtName)) onSince.set(e.courtName, e.at.getTime()); }
-      // "arrived" rows are not switch events (early check-in, lights still
-      // off) — only a real "off" closes an open interval.
-      else if (e.action === "off") { const s = onSince.get(e.courtName); if (s !== undefined) { lightMinutes += (e.at.getTime() - s) / 60_000; onSince.delete(e.courtName); } }
-    }
-    if (isToday) for (const s of onSince.values()) lightMinutes += (now.getTime() - s) / 60_000;
-  }
-  const lightHours = lightMinutes / 60;
-  const actualCost = lightHours * settings.lightingPowerKw * settings.electricityPricePerUnit;
-  const baselineCost = courts.length * (openMinutes / 60) * settings.lightingPowerKw * settings.electricityPricePerUnit;
-  const saved = Math.max(0, baselineCost - actualCost);
   const bookedMinutes = bookings.filter((b) => b.status === "booked" || b.status === "checked_in" || b.status === "completed")
     .reduce((sum, b) => sum + b.durationMinutes, 0);
   const utilization = courts.length && openMinutes ? Math.round((bookedMinutes / (courts.length * openMinutes)) * 100) : 0;
@@ -622,13 +606,10 @@ export default function Dashboard() {
   const collectedToday = moneyBookings.reduce((s, b) => s + paymentSummary(b).collected, 0);
   const outstandingToday = moneyBookings.reduce((s, b) => s + paymentSummary(b).outstanding, 0);
 
-  // ---- KICKS-style layout data (sidebar stats, stat chips, trend panel) ----
+  // ---- KICKS-style layout data (sidebar stats, trend panel) ----
   const scrollToId = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const liveNowCount = isToday ? bookings.filter((b) => b.status === "checked_in" && b.lightsOffAt !== null && b.lightsOffAt > now && bookingStart(b) <= now).length : 0;
   const courtsLive = isToday ? courts.filter((c) => lightsOnFor(c, now)).length : 0;
-  const nextBooking = [...bookings]
-    .filter((b) => b.status === "booked" && (!isToday || bookingStart(b) > now))
-    .sort((a, b) => a.startMinutes - b.startMinutes)[0];
   const trendCountFor = (iso: string) => (days[iso]?.bookings ?? []).filter((b) => b.status !== "cancelled").length;
   const trendDays = Array.from({ length: 7 }, (_, i) => {
     const iso = isoAddDays(selectedISO, i - 6);
@@ -683,28 +664,20 @@ export default function Dashboard() {
   // Grid court-header summaries (replacing the old "LED · kW" subline),
   // derived from the same gridBookings + gridBlockState the blocks use:
   // today — who is on the court now (live block, or the checked-in pending
-  // one) and which bookings start within the next 2 hours; other days —
-  // the day's booking count and its first booking. Cancelled bookings are
-  // already excluded via gridBookings; no-shows never count as playing or
-  // upcoming.
+  // one); other days — the day's booking count and its first booking.
+  // Cancelled bookings are already excluded via gridBookings.
   const courtHeaderSummary = (courtId: string) => {
     const courtBookings = gridBookings.filter((b) => b.courtId === courtId);
     let nowName: string | null = null;
-    let nowId: string | null = null;
     if (isToday) {
       for (const b of courtBookings) {
         const st = gridBlockState(b);
-        if (st.live || st.pending) { nowName = b.customerName; nowId = b.id; break; }
+        if (st.live || st.pending) { nowName = b.customerName; break; }
       }
     }
-    const upcoming = courtBookings
-      .filter((b) => b.id !== nowId && b.status !== "no_show" && b.startMinutes >= nowMinToday && b.startMinutes <= nowMinToday + 120)
-      .sort((a, b) => a.startMinutes - b.startMinutes);
     const first = [...courtBookings].sort((a, b) => a.startMinutes - b.startMinutes)[0] ?? null;
     return {
       nowName,
-      nextNames: upcoming.slice(0, 3).map((b) => b.customerName),
-      nextMore: Math.max(0, upcoming.length - 3),
       dayCount: courtBookings.length,
       first,
     };
@@ -890,27 +863,6 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Stat chips — the day's headline numbers; the last chip carries
-          the next booking that used to live on the hero card */}
-      <section className="mt-5 flex flex-wrap gap-2" aria-label="Day at a glance">
-        {[
-          { label: isToday ? "Bookings today" : "Bookings", value: String(counts.total), amber: false },
-          { label: "Occupancy", value: `${utilization}%`, amber: false },
-          { label: "Collected", value: fmtRs(collectedToday), amber: false },
-          { label: "Outstanding", value: fmtRs(outstandingToday), amber: true },
-          { label: isToday ? "Lights saved today" : "Lights saved", value: `Rs ${Math.round(saved).toLocaleString()}`, amber: false },
-        ].map((chip) => (
-          <div key={chip.label} className="panel-shadow rounded-xl border border-pb-border bg-pb-surface px-3.5 py-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-pb-dim">{chip.label} </span>
-            <span className={`text-[15px] font-extrabold tabular-nums ${chip.amber ? "text-pb-amber" : ""}`}>{chip.value}</span>
-          </div>
-        ))}
-        <div className="panel-shadow rounded-xl border border-pb-border bg-pb-surface px-3.5 py-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-pb-dim">Next </span>
-          <span className="text-[15px] font-extrabold">{nextBooking ? <>{nextBooking.customerName} · {courts.find((c) => c.id === nextBooking.courtId)?.name} · {formatMinutesOfDay(nextBooking.startMinutes)}</> : "No upcoming bookings"}</span>
-        </div>
-      </section>
-
       {/* Bookings — Doc §4: court × time schedule grid by default, list one tap away */}
       <section id="bookings" className="mt-6 scroll-mt-4">
         <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -943,14 +895,9 @@ export default function Dashboard() {
                       <div key={c.id} className="flex-1 border-l border-pb-border px-2 py-3 text-center">
                         <p className="text-sm font-semibold">{c.name}</p>
                         {isToday ? (
-                          <>
-                            <p className="truncate text-[11px] font-medium text-pb-dim">
-                              {sum.nowName ? <><span className="font-semibold text-pb-accent">● Now: </span><span className="font-semibold text-pb-text">{sum.nowName}</span></> : "Free now"}
-                            </p>
-                            <p className="truncate text-[11px] text-pb-dim">
-                              {sum.nextNames.length > 0 ? `Next 2h: ${sum.nextNames.join(" · ")}${sum.nextMore > 0 ? ` +${sum.nextMore} more` : ""}` : "Next 2h: —"}
-                            </p>
-                          </>
+                          <p className="truncate text-[11px] font-medium text-pb-dim">
+                            {sum.nowName ? <><span className="font-semibold text-pb-accent">● Now: </span><span className="font-semibold text-pb-text">{sum.nowName}</span></> : "Free now"}
+                          </p>
                         ) : (
                           <>
                             <p className="truncate text-[11px] font-medium text-pb-dim">{sum.dayCount === 1 ? "1 booking" : `${sum.dayCount} bookings`}</p>
