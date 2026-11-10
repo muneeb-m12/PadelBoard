@@ -169,7 +169,7 @@ export default function Dashboard() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [bookingsView, setBookingsView] = useState<"grid" | "list">("grid");
   const [gridFilter, setGridFilter] = useState<"all" | "live" | "booked" | "completed" | "no_show">("all");
-  // Schedule grid shows a 5-hour window of the day at a time (paginated);
+  // Schedule grid shows a 6.5-hour window of the day at a time (paginated);
   // null = the default window for the selected date (see grid section).
   const [gridWindowStart, setGridWindowStart] = useState<number | null>(null);
   const [days, setDays] = useState<Record<string, DayData>>(() => seedAll());
@@ -680,17 +680,49 @@ export default function Dashboard() {
   const gridFilterCounts: Record<"all" | "live" | "booked" | "completed" | "no_show", number> = { all: gridBookings.length, live: 0, booked: 0, completed: 0, no_show: 0 };
   for (const b of gridBookings) gridFilterCounts[gridBlockState(b).kind] += 1;
 
-  // ---- Grid 5-hour window + pagination ----
-  // The grid renders a 300-minute window of the full range at a time;
+  // Grid court-header summaries (replacing the old "LED · kW" subline),
+  // derived from the same gridBookings + gridBlockState the blocks use:
+  // today — who is on the court now (live block, or the checked-in pending
+  // one) and which bookings start within the next 2 hours; other days —
+  // the day's booking count and its first booking. Cancelled bookings are
+  // already excluded via gridBookings; no-shows never count as playing or
+  // upcoming.
+  const courtHeaderSummary = (courtId: string) => {
+    const courtBookings = gridBookings.filter((b) => b.courtId === courtId);
+    let nowName: string | null = null;
+    let nowId: string | null = null;
+    if (isToday) {
+      for (const b of courtBookings) {
+        const st = gridBlockState(b);
+        if (st.live || st.pending) { nowName = b.customerName; nowId = b.id; break; }
+      }
+    }
+    const upcoming = courtBookings
+      .filter((b) => b.id !== nowId && b.status !== "no_show" && b.startMinutes >= nowMinToday && b.startMinutes <= nowMinToday + 120)
+      .sort((a, b) => a.startMinutes - b.startMinutes);
+    const first = [...courtBookings].sort((a, b) => a.startMinutes - b.startMinutes)[0] ?? null;
+    return {
+      nowName,
+      nextNames: upcoming.slice(0, 3).map((b) => b.customerName),
+      nextMore: Math.max(0, upcoming.length - 3),
+      dayCount: courtBookings.length,
+      first,
+    };
+  };
+
+  // ---- Grid 6.5-hour window + pagination ----
+  // The grid renders a 390-minute window of the full range at a time;
   // blocks are clipped to the window (see the grid render below). Default
-  // window: for today, the current hour floored; for any other day, the
-  // range start. When the full range fits in 300 minutes the whole range
-  // shows and pagination is disabled.
-  const GRID_WINDOW_MINUTES = 300;
+  // window: for today, anchored to now — start is (now − 90 min) floored
+  // to the nearest 30 minutes, so the window covers roughly 1.5 hours
+  // before now and 5 hours after; for any other day, the range start.
+  // When the full range fits in 390 minutes the whole range shows and
+  // pagination is disabled.
+  const GRID_WINDOW_MINUTES = 390;
   const gridPaginates = gridEndMin - gridStartMin > GRID_WINDOW_MINUTES;
   const maxGridWindowStart = Math.max(gridStartMin, gridEndMin - GRID_WINDOW_MINUTES);
   const defaultGridWindowStart = isToday
-    ? Math.max(gridStartMin, Math.min(Math.floor(nowMinToday / 60) * 60, maxGridWindowStart))
+    ? Math.max(gridStartMin, Math.min(Math.floor((nowMinToday - 90) / 30) * 30, maxGridWindowStart))
     : gridStartMin;
   const winStartMin = Math.max(gridStartMin, Math.min(gridWindowStart ?? defaultGridWindowStart, maxGridWindowStart));
   const winEndMin = Math.min(winStartMin + GRID_WINDOW_MINUTES, gridEndMin);
@@ -906,12 +938,29 @@ export default function Dashboard() {
                 {/* Court header row */}
                 <div className="flex border-b border-pb-border">
                   <div className="shrink-0" style={{ width: 56 }} />
-                  {courts.map((c) => (
-                    <div key={c.id} className="flex-1 border-l border-pb-border px-2 py-3 text-center">
-                      <p className="text-sm font-semibold">{c.name}</p>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-pb-dim">LED · {settings.lightingPowerKw} kW</p>
-                    </div>
-                  ))}
+                  {courts.map((c) => {
+                    const sum = courtHeaderSummary(c.id);
+                    return (
+                      <div key={c.id} className="flex-1 border-l border-pb-border px-2 py-3 text-center">
+                        <p className="text-sm font-semibold">{c.name}</p>
+                        {isToday ? (
+                          <>
+                            <p className="truncate text-[11px] font-medium text-pb-dim">
+                              {sum.nowName ? <><span className="font-semibold text-pb-accent">● Now: </span><span className="font-semibold text-pb-text">{sum.nowName}</span></> : "Free now"}
+                            </p>
+                            <p className="truncate text-[11px] text-pb-dim">
+                              {sum.nextNames.length > 0 ? `Next 2h: ${sum.nextNames.join(" · ")}${sum.nextMore > 0 ? ` +${sum.nextMore} more` : ""}` : "Next 2h: —"}
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="truncate text-[11px] font-medium text-pb-dim">{sum.dayCount === 1 ? "1 booking" : `${sum.dayCount} bookings`}</p>
+                            <p className="truncate text-[11px] text-pb-dim">{sum.first ? `First: ${sum.first.customerName} · ${formatMinutesOfDay(sum.first.startMinutes)}` : "—"}</p>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 {/* Time body: hour + half-hour gridlines, blocks at true positions */}
                 <div className="relative flex" style={{ height: gridHeightPx }}>
@@ -952,10 +1001,10 @@ export default function Dashboard() {
                                 title={`${b.customerName} · ${formatMinutesOfDay(b.startMinutes)}–${formatMinutesOfDay(b.startMinutes + b.durationMinutes)} — tap for details and payments`}
                                 className={`absolute inset-x-1 z-10 overflow-hidden rounded-[10px] border px-2 py-1.5 text-left ${st.cls}${clippedTop ? " rounded-t-none" : ""}${clippedBottom ? " rounded-b-none" : ""}`}
                                 style={{ top, height }}>
-                                <span className="block truncate text-[12.5px] font-bold leading-tight">{b.customerName}</span>
-                                <span className="block truncate text-[10px] leading-tight opacity-80">{formatMinutesOfDay(b.startMinutes)} – {formatMinutesOfDay(b.startMinutes + b.durationMinutes)}{st.note ? ` · ${st.note}` : ""}</span>
-                                {st.live && height >= 46 && <span className="mt-0.5 inline-block rounded-full bg-pb-amber px-1.5 py-px text-[9px] font-black text-pb-amber-ink">● LIVE · LIGHTS ON</span>}
-                                {st.pending && height >= 46 && <span className="mt-0.5 inline-block rounded-full bg-pb-amber px-1.5 py-px text-[9px] font-black text-pb-amber-ink">LIGHTS ON AT {formatMinutesOfDay(b.startMinutes)}</span>}
+                                <span className={`block truncate text-[12.5px] font-bold leading-tight${st.live ? " pr-[104px]" : ""}${st.pending ? " pr-[124px]" : ""}`}>{b.customerName}</span>
+                                <span className={`block truncate text-[10px] leading-tight opacity-80${st.live ? " pr-[104px]" : ""}${st.pending ? " pr-[124px]" : ""}`}>{formatMinutesOfDay(b.startMinutes)} – {formatMinutesOfDay(b.startMinutes + b.durationMinutes)}{st.note ? ` · ${st.note}` : ""}</span>
+                                {st.live && <span className="absolute right-1.5 top-1.5 rounded-full bg-pb-amber px-1.5 py-px text-[9px] font-black text-pb-amber-ink">● LIVE · LIGHTS ON</span>}
+                                {st.pending && <span className="absolute right-1.5 top-1.5 rounded-full bg-pb-amber px-1.5 py-px text-[9px] font-black text-pb-amber-ink">LIGHTS ON AT {formatMinutesOfDay(b.startMinutes)}</span>}
                                 {!st.live && st.pay.outstanding > 0 && b.status !== "no_show" && height >= 46 && <span className="mt-0.5 inline-block rounded-full bg-red-500 px-1.5 py-px text-[9px] font-black text-white">{fmtRs(st.pay.outstanding)} UNPAID</span>}
                               </button>
                             );
