@@ -141,6 +141,30 @@ const inputCls = "w-full rounded-[10px] border border-pb-border bg-pb-surface px
 const btnCls = "rounded-full border border-pb-border bg-pb-surface px-3 py-1.5 text-sm font-medium hover:bg-pb-surface2";
 const chipCls = "rounded-full border border-pb-border bg-pb-surface2 px-2.5 py-0.5 text-xs font-semibold";
 
+// Compact-tile (Variant B court cards, approved 2026-11-10) button sizes.
+const tileBtnCls = "inline-flex h-[30px] items-center whitespace-nowrap rounded-full border border-pb-border bg-pb-surface px-3 text-[12.5px] font-semibold hover:bg-pb-surface2";
+const tileTinyCls = "inline-flex h-[26px] items-center whitespace-nowrap rounded-full border border-pb-border bg-pb-surface px-2 text-[11.5px] font-semibold hover:bg-pb-surface2";
+const tilePrimaryCls = "inline-flex h-[30px] items-center whitespace-nowrap rounded-full bg-pb-accent px-3 text-[12.5px] font-bold text-white hover:brightness-110";
+
+/** Variant B countdown ring: the arc shows the ELAPSED fraction of the period
+ *  the centred countdown belongs to; fraction null renders the bare track
+ *  (idle court / not today). Tones: accent = live session, amber = the
+ *  transitional states (checked-in waiting for its start, changeover). */
+function ProgressRing({ fraction, label, tone }: { fraction: number | null; label: string; tone: "accent" | "amber" | "dim" }) {
+  const C = 2 * Math.PI * 26;
+  const f = fraction === null ? 0 : Math.min(1, Math.max(0, fraction));
+  const toneCls = tone === "amber" ? "text-pb-amber" : tone === "dim" ? "text-pb-dim" : "text-pb-accent";
+  return (
+    <div className="relative h-16 w-16 flex-none" aria-hidden="true">
+      <svg width="64" height="64" viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" strokeWidth="5" className="text-pb-border" />
+        <circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - f)} transform="rotate(-90 32 32)" className={toneCls} />
+      </svg>
+      <div className={`absolute inset-0 flex items-center justify-center font-bold tabular-nums ${label.length > 5 ? "text-[11px]" : "text-[15px]"}`}>{label}</div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [bookingsView, setBookingsView] = useState<"grid" | "list">("grid");
@@ -1070,41 +1094,55 @@ export default function Dashboard() {
           const lightsOn = isToday && lightsOnFor(court, now);
           const pending = active !== undefined && bookingStart(active) > now;
           const changeover = isToday && !active && !court.manualOverride ? changeoverForCourt(court.id, now) : undefined;
+          // Ring = elapsed fraction of whatever the countdown counts down:
+          // live session (booked start → effective end incl. extensions/comp),
+          // the 15-min check-in window when waiting for the booked start, or
+          // the changeover grace window. No period → bare track.
+          const ring = active
+            ? pending
+              ? { fraction: (now.getTime() - (bookingStart(active).getTime() - 15 * 60_000)) / (15 * 60_000), label: countdown(bookingStart(active), now), tone: "amber" as const }
+              : { fraction: active.lightsOffAt ? (now.getTime() - bookingStart(active).getTime()) / (active.lightsOffAt.getTime() - bookingStart(active).getTime()) : null, label: countdown(active.lightsOffAt, now), tone: "accent" as const }
+            : changeover
+              ? { fraction: (now.getTime() - (changeover.until.getTime() - settings.changeoverGraceMinutes * 60_000)) / (settings.changeoverGraceMinutes * 60_000), label: countdown(changeover.until, now), tone: "amber" as const }
+              : { fraction: null, label: "—", tone: "dim" as const };
           return (
-            <div key={court.id} id={`court-card-${court.id}`} className={`panel-shadow rounded-[14px] border p-5 ${lightsOn ? "lit-glow border-pb-accent/60 bg-pb-accent/[0.07]" : "border-pb-border bg-pb-surface"} ${focusedCourtId === court.id ? "ring-2 ring-pb-accent/70" : ""}`}>
-              <div className="flex items-center justify-between">
-                <h2 className="text-[15px] font-semibold">{court.name}</h2>
-                <span className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-bold ${lightsOn ? "bg-pb-amber text-pb-amber-ink" : "bg-pb-surface2 text-pb-dim"}`}>
-                  {lightsOn && <span className="pulse-dot inline-block h-2 w-2 rounded-full bg-pb-amber-ink" />}
-                  {lightsOn ? "Lights ON" : "Lights off"}
-                </span>
-              </div>
-              {active ? (
-                <div className="mt-3">
-                  <p className="text-sm font-semibold">{active.customerName} · {active.customerPhone}</p>
-                  <p className="font-black leading-none text-4xl tabular-nums">{countdown(pending ? bookingStart(active) : active.lightsOffAt, now)}</p>
-                  {pending ? (
-                    <p className="mt-1 text-xs text-pb-dim">Checked in · lights on at {formatMinutesOfDay(active.startMinutes)} · Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
+            <div key={court.id} id={`court-card-${court.id}`} className={`panel-shadow rounded-[14px] border px-[18px] pb-3 pt-4 ${lightsOn ? "lit-glow border-pb-accent/60 bg-pb-accent/[0.07]" : "border-pb-border bg-pb-surface"} ${focusedCourtId === court.id ? "ring-2 ring-pb-accent/70" : ""}`}>
+              <div className="flex items-center gap-4">
+                <ProgressRing fraction={ring.fraction} label={ring.label} tone={ring.tone} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="text-xs font-bold uppercase tracking-[0.16em]">{court.name}</h2>
+                    <span className={`flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${lightsOn ? "bg-pb-amber text-pb-amber-ink" : "bg-pb-surface2 text-pb-dim"}`}>
+                      {lightsOn && <span className="pulse-dot inline-block h-2 w-2 rounded-full bg-pb-amber-ink" />}
+                      {lightsOn ? "Lights ON" : "Lights off"}
+                    </span>
+                  </div>
+                  {active ? (
+                    <>
+                      <p className="mt-1 text-sm font-semibold">{active.customerName} <span className="font-medium text-pb-dim">· {active.customerPhone}</span></p>
+                      {pending ? (
+                        <p className="mt-0.5 text-xs leading-relaxed text-pb-dim">Checked in · lights on at {formatMinutesOfDay(active.startMinutes)} · Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
+                      ) : (
+                        <p className="mt-0.5 text-xs leading-relaxed text-pb-dim">Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
+                      )}
+                    </>
+                  ) : changeover ? (
+                    <>
+                      <p className="mt-1 text-[13.5px] font-medium">{changeover.prev.customerName} finished · next {changeover.next.customerName} at {formatMinutesOfDay(changeover.next.startMinutes)}</p>
+                      <p className="mt-0.5 text-xs leading-relaxed text-pb-dim">Changeover · lights off at {changeover.until.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} if {changeover.next.customerName} doesn&apos;t check in</p>
+                    </>
                   ) : (
-                    <p className="mt-1 text-xs text-pb-dim">Ends {active.lightsOffAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{active.compMinutes > 0 ? ` · incl. +${active.compMinutes} min club delay` : ""}{court.manualOverride ? " · Manual override" : ""}</p>
+                    <p className="mt-1 text-sm text-pb-dim">
+                      {!isToday ? "Sessions show live on the day" : lightsOn && court.manualOverride ? "Manual override — lights forced on by staff" : "No active session"}{court.manualOverride && isToday ? " · Manual override active" : ""}
+                    </p>
                   )}
                 </div>
-              ) : changeover ? (
-                <div className="mt-3">
-                  <p className="text-sm font-semibold">{changeover.prev.customerName} finished · next {changeover.next.customerName} at {formatMinutesOfDay(changeover.next.startMinutes)}</p>
-                  <p className="font-black leading-none text-4xl tabular-nums">{countdown(changeover.until, now)}</p>
-                  <p className="mt-1 text-xs text-pb-dim">Changeover · lights off at {changeover.until.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} if {changeover.next.customerName} doesn&apos;t check in</p>
-                </div>
-              ) : (
-                <p className="mt-3 text-sm text-pb-dim">
-                  {!isToday ? "Sessions show live on the day" : lightsOn && court.manualOverride ? "Manual override — lights forced on by staff" : "No active session"}{court.manualOverride && isToday ? " · Manual override active" : ""}
-                </p>
-              )}
+              </div>
               {isToday && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button onClick={() => handleToggleLights(court)} className={lightsOn ? "rounded-full bg-pb-accent px-3.5 py-1.5 text-sm font-bold text-white" : btnCls}>{lightsOn ? "Turn off manually" : "Turn on manually"}</button>
-                  {court.manualOverride && <button onClick={() => handleBackToAuto(court)} className={btnCls}>Back to auto</button>}
-                  {active && <><button onClick={() => handleExtend(active, 30)} className={btnCls}>Extend 30m</button><button onClick={() => handleExtend(active, 60)} className={btnCls}>Extend 1h</button><span className="flex items-center gap-1 text-xs font-semibold text-pb-dim" title="Free minutes when the delay was the club's fault — no charge, fee unchanged">Club delay {[5, 10, 15].map((mins) => <button key={mins} onClick={() => handleClubDelay(active, mins)} className={btnCls}>+{mins}m</button>)}</span><button onClick={() => handleEndSession(active)} className={btnCls}>End session</button></>}
+                <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
+                  <button onClick={() => handleToggleLights(court)} className={lightsOn ? tilePrimaryCls : tileBtnCls}>{lightsOn ? "Turn off manually" : "Turn on manually"}</button>
+                  {court.manualOverride && <button onClick={() => handleBackToAuto(court)} className={tileBtnCls}>Back to auto</button>}
+                  {active && <><button onClick={() => handleExtend(active, 30)} className={tileBtnCls}>Extend 30m</button><button onClick={() => handleExtend(active, 60)} className={tileBtnCls}>+1h</button><span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-pb-dim" title="Free minutes when the delay was the club's fault — no charge, fee unchanged">Club delay {[5, 10, 15].map((mins) => <button key={mins} onClick={() => handleClubDelay(active, mins)} className={tileTinyCls}>+{mins}</button>)}</span><button onClick={() => handleEndSession(active)} className="ml-auto px-1 py-1 text-xs font-semibold text-red-500 hover:text-red-400">End session</button></>}
                 </div>
               )}
             </div>
