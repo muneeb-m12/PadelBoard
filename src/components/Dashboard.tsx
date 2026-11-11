@@ -9,6 +9,7 @@ import {
 const uid = () => Math.random().toString(36).slice(2, 10);
 const DURATION_CHIPS = [1, 15, 30, 45, 60, 90, 120, 180];
 const DEFAULT_RATE_PER_HOUR = 4800;
+const DEFAULT_ADVANCE = 1000;
 const fmtRs = (n: number) => `Rs ${Math.round(n).toLocaleString()}`;
 
 /** Split a total equally; the rupee remainder goes +1 to the first shares so shares always sum to the total. */
@@ -24,21 +25,36 @@ function equalShares(total: number, players: { name: string; phone: string }[], 
 }
 
 function paymentSummary(b: Booking) {
-  const collected = b.shares.reduce((s, sh) => s + (sh.paid ? sh.amountDue : 0), 0);
+  const advanceCollected = b.advancePaid ? b.advanceAmount : 0;
+  const sharesCollected = b.shares.reduce((s, sh) => s + (sh.paid ? sh.amountDue : 0), 0);
+  const collected = advanceCollected + sharesCollected;
+  const outstanding = Math.max(0, b.totalAmount - collected);
   return {
     collected,
-    outstanding: Math.max(0, b.totalAmount - collected),
+    outstanding,
+    /** part of `outstanding` that is the unpaid advance (rest = unpaid shares) */
+    advanceDue: b.advanceAmount > 0 && !b.advancePaid ? Math.min(b.advanceAmount, outstanding) : 0,
+    /** part of `outstanding` owed as unpaid per-player shares of the balance */
+    sharesOutstanding: Math.max(0, outstanding - (b.advanceAmount > 0 && !b.advancePaid ? b.advanceAmount : 0)),
     paidCount: b.shares.filter((s) => s.paid).length,
     shareCount: b.shares.length,
     fullyPaid: b.totalAmount > 0 && collected >= b.totalAmount,
   };
 }
 
-/** wa.me link with a pre-filled payment reminder for one player's share. */
+/** wa.me link with a pre-filled payment reminder for one player's share of the balance. */
 function whatsappReminderLink(b: Booking, sh: BookingShare, courtName: string): string {
   let digits = sh.phone.replace(/\D/g, "");
   if (digits.startsWith("0")) digits = "92" + digits.slice(1);
-  const text = `Salam ${sh.name}, your share for ${courtName} (${formatMinutesOfDay(b.startMinutes)}, ${formatDuration(b.durationMinutes)}) is ${fmtRs(sh.amountDue)}. Please pay the club via JazzCash/Easypaisa or cash at the counter before the game. — PadelBoard`;
+  const text = `Salam ${sh.name}, your share of the balance for ${courtName} (${formatMinutesOfDay(b.startMinutes)}, ${formatDuration(b.durationMinutes)}) is ${fmtRs(sh.amountDue)}. Please pay the club via JazzCash/Easypaisa or cash at the counter after the match. — PadelBoard`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+}
+
+/** wa.me link asking the organizer for the booking advance. */
+function whatsappAdvanceLink(b: Booking, courtName: string): string {
+  let digits = b.customerPhone.replace(/\D/g, "");
+  if (digits.startsWith("0")) digits = "92" + digits.slice(1);
+  const text = `Salam ${b.customerName}, to secure your ${courtName} booking (${formatMinutesOfDay(b.startMinutes)}, ${formatDuration(b.durationMinutes)}), please pay the advance of ${fmtRs(b.advanceAmount)} via JazzCash/Easypaisa or cash at the counter. The balance of ${fmtRs(Math.max(0, b.totalAmount - b.advanceAmount))} is payable after the match. — PadelBoard`;
   return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
 }
 
@@ -69,15 +85,15 @@ function seedDay(offset: number): { bookings: Booking[]; log: LightLogEntry[] } 
     const coEnd = nowMin - 1;
     const coStart = coEnd - 60;
     const changeoverPair: Booking[] = coStart >= 0 ? [
-      { id: uid(), courtId: "c2", customerName: "Adnan Malik", customerPhone: "0300 7778899", dateISO, startMinutes: coStart, durationMinutes: 60, compMinutes: 0, status: "checked_in", checkedInAt: atMin(coStart), lightsOffAt: atMin(coEnd), totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: false, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Adnan Malik", phone: "0300 7778899" }], 1) },
-      { id: uid(), courtId: "c2", customerName: "Rayan Ali", customerPhone: "0321 7779900", dateISO, startMinutes: coEnd, durationMinutes: 60, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Rayan Ali", phone: "0321 7779900" }, { name: "Usman Sheikh", phone: "0301 5550099" }, { name: "Talha Iqbal", phone: "0333 5558877" }, { name: "Danish Ali", phone: "0309 5556655" }], 0) },
+      { id: uid(), courtId: "c2", customerName: "Adnan Malik", customerPhone: "0300 7778899", dateISO, startMinutes: coStart, durationMinutes: 60, compMinutes: 0, status: "checked_in", checkedInAt: atMin(coStart), lightsOffAt: atMin(coEnd), totalAmount: DEFAULT_RATE_PER_HOUR, advanceAmount: DEFAULT_ADVANCE, advancePaid: true, advanceMethod: "jazzcash", splitPayment: false, shares: equalShares(DEFAULT_RATE_PER_HOUR - DEFAULT_ADVANCE, [{ name: "Adnan Malik", phone: "0300 7778899" }], 1) },
+      { id: uid(), courtId: "c2", customerName: "Rayan Ali", customerPhone: "0321 7779900", dateISO, startMinutes: coEnd, durationMinutes: 60, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, advanceAmount: DEFAULT_ADVANCE, advancePaid: true, advanceMethod: "jazzcash", splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR - DEFAULT_ADVANCE, [{ name: "Rayan Ali", phone: "0321 7779900" }, { name: "Usman Sheikh", phone: "0301 5550099" }, { name: "Talha Iqbal", phone: "0333 5558877" }, { name: "Danish Ali", phone: "0309 5556655" }], 0) },
     ] : [];
     return {
       bookings: [
-        { id: uid(), courtId: "c1", customerName: "Ali Raza", customerPhone: "0300 1112233", dateISO, startMinutes: aliStart, durationMinutes: 60, compMinutes: 10, status: "checked_in", checkedInAt: checkedIn1, lightsOffAt: atMin(aliStart + 70), totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Ali Raza", phone: "0300 1112233" }, { name: "Daniyal Sheikh", phone: "0321 5551234" }, { name: "Omar Farooq", phone: "0333 5559876" }, { name: "Zain Ul Abideen", phone: "0301 5553456" }], 3) },
-        { id: uid(), courtId: "c3", customerName: "Sara Khan", customerPhone: "0321 4455667", dateISO, startMinutes: saraStart, durationMinutes: 60, compMinutes: 0, status: "checked_in", checkedInAt: checkedIn3, lightsOffAt: atMin(saraStart + 60), totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Sara Khan", phone: "0321 4455667" }, { name: "Mahnoor Fatima", phone: "0302 5557788" }, { name: "Hira Shahid", phone: "0345 5552211" }, { name: "Areeba Khan", phone: "0311 5556644" }], 2) },
+        { id: uid(), courtId: "c1", customerName: "Ali Raza", customerPhone: "0300 1112233", dateISO, startMinutes: aliStart, durationMinutes: 60, compMinutes: 10, status: "checked_in", checkedInAt: checkedIn1, lightsOffAt: atMin(aliStart + 70), totalAmount: DEFAULT_RATE_PER_HOUR, advanceAmount: DEFAULT_ADVANCE, advancePaid: true, advanceMethod: "jazzcash", splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR - DEFAULT_ADVANCE, [{ name: "Ali Raza", phone: "0300 1112233" }, { name: "Daniyal Sheikh", phone: "0321 5551234" }, { name: "Omar Farooq", phone: "0333 5559876" }, { name: "Zain Ul Abideen", phone: "0301 5553456" }], 3) },
+        { id: uid(), courtId: "c3", customerName: "Sara Khan", customerPhone: "0321 4455667", dateISO, startMinutes: saraStart, durationMinutes: 60, compMinutes: 0, status: "checked_in", checkedInAt: checkedIn3, lightsOffAt: atMin(saraStart + 60), totalAmount: DEFAULT_RATE_PER_HOUR, advanceAmount: DEFAULT_ADVANCE, advancePaid: true, advanceMethod: "jazzcash", splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR - DEFAULT_ADVANCE, [{ name: "Sara Khan", phone: "0321 4455667" }, { name: "Mahnoor Fatima", phone: "0302 5557788" }, { name: "Hira Shahid", phone: "0345 5552211" }, { name: "Areeba Khan", phone: "0311 5556644" }], 2) },
         ...changeoverPair,
-        { id: uid(), courtId: "c2", customerName: "Hamza Tariq", customerPhone: "0333 9988776", dateISO, startMinutes: Math.min(coEnd + 75, 1435), durationMinutes: 60, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Hamza Tariq", phone: "0333 9988776" }, { name: "Ahmed Raza", phone: "0300 5554321" }, { name: "Bilal Hussain", phone: "0322 5558765" }, { name: "Fahad Iqbal", phone: "0303 5552109" }], 1) },
+        { id: uid(), courtId: "c2", customerName: "Hamza Tariq", customerPhone: "0333 9988776", dateISO, startMinutes: Math.min(coEnd + 75, 1435), durationMinutes: 60, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, advanceAmount: DEFAULT_ADVANCE, advancePaid: false, advanceMethod: null, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR - DEFAULT_ADVANCE, [{ name: "Hamza Tariq", phone: "0333 9988776" }, { name: "Ahmed Raza", phone: "0300 5554321" }, { name: "Bilal Hussain", phone: "0322 5558765" }, { name: "Fahad Iqbal", phone: "0303 5552109" }], 1) },
       ],
       log: [
         { id: uid(), courtName: "Court 1", action: "on", reason: "club_delay", at: aliCompAt },
@@ -90,8 +106,8 @@ function seedDay(offset: number): { bookings: Booking[]; log: LightLogEntry[] } 
   if (offset === 1) {
     return {
       bookings: [
-        { id: uid(), courtId: "c1", customerName: "Usman Malik", customerPhone: "0301 2233445", dateISO, startMinutes: 19 * 60, durationMinutes: 90, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR * 1.5, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR * 1.5, [{ name: "Usman Malik", phone: "0301 2233445" }, { name: "Talha Mehmood", phone: "0312 5553344" }, { name: "Shahzaib Ali", phone: "0331 5559988" }, { name: "Waqas Ahmad", phone: "0309 5551122" }], 0) },
-        { id: uid(), courtId: "c2", customerName: "Ayesha Noor", customerPhone: "0345 6677889", dateISO, startMinutes: 20 * 60 + 30, durationMinutes: 60, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: false, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Ayesha Noor", phone: "0345 6677889" }], 0) },
+        { id: uid(), courtId: "c1", customerName: "Usman Malik", customerPhone: "0301 2233445", dateISO, startMinutes: 19 * 60, durationMinutes: 90, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR * 1.5, advanceAmount: DEFAULT_ADVANCE, advancePaid: true, advanceMethod: "jazzcash", splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR * 1.5 - DEFAULT_ADVANCE, [{ name: "Usman Malik", phone: "0301 2233445" }, { name: "Talha Mehmood", phone: "0312 5553344" }, { name: "Shahzaib Ali", phone: "0331 5559988" }, { name: "Waqas Ahmad", phone: "0309 5551122" }], 0) },
+        { id: uid(), courtId: "c2", customerName: "Ayesha Noor", customerPhone: "0345 6677889", dateISO, startMinutes: 20 * 60 + 30, durationMinutes: 60, compMinutes: 0, status: "booked", checkedInAt: null, lightsOffAt: null, totalAmount: DEFAULT_RATE_PER_HOUR, advanceAmount: DEFAULT_ADVANCE, advancePaid: false, advanceMethod: null, splitPayment: false, shares: equalShares(DEFAULT_RATE_PER_HOUR - DEFAULT_ADVANCE, [{ name: "Ayesha Noor", phone: "0345 6677889" }], 0) },
       ],
       log: [],
     };
@@ -102,7 +118,7 @@ function seedDay(offset: number): { bookings: Booking[]; log: LightLogEntry[] } 
     const off = new Date(yStart.getTime() + 60 * 60_000); // …so the session still ended at the booked end, 20:00
     return {
       bookings: [
-        { id: uid(), courtId: "c1", customerName: "Bilal Ahmed", customerPhone: "0308 1122334", dateISO, startMinutes: 19 * 60, durationMinutes: 60, compMinutes: 0, status: "completed", checkedInAt: y, lightsOffAt: off, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR, [{ name: "Bilal Ahmed", phone: "0308 1122334" }, { name: "Hassan Javed", phone: "0305 5556677" }, { name: "Imran Khalid", phone: "0323 5554433" }, { name: "Noman Aslam", phone: "0313 5552211" }], 4) },
+        { id: uid(), courtId: "c1", customerName: "Bilal Ahmed", customerPhone: "0308 1122334", dateISO, startMinutes: 19 * 60, durationMinutes: 60, compMinutes: 0, status: "completed", checkedInAt: y, lightsOffAt: off, totalAmount: DEFAULT_RATE_PER_HOUR, advanceAmount: DEFAULT_ADVANCE, advancePaid: true, advanceMethod: "jazzcash", splitPayment: true, shares: equalShares(DEFAULT_RATE_PER_HOUR - DEFAULT_ADVANCE, [{ name: "Bilal Ahmed", phone: "0308 1122334" }, { name: "Hassan Javed", phone: "0305 5556677" }, { name: "Imran Khalid", phone: "0323 5554433" }, { name: "Noman Aslam", phone: "0313 5552211" }], 4) },
       ],
       log: [
         { id: uid(), courtName: "Court 1", action: "off", reason: "automatic", at: off },
@@ -173,7 +189,7 @@ export default function Dashboard() {
   // null = the default window for the selected date (see grid section).
   const [gridWindowStart, setGridWindowStart] = useState<number | null>(null);
   const [days, setDays] = useState<Record<string, DayData>>(() => seedAll());
-  const [settings, setSettings] = useState<ClubSettings>({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23, courtRatePerHour: DEFAULT_RATE_PER_HOUR, changeoverGraceMinutes: 3 });
+  const [settings, setSettings] = useState<ClubSettings>({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23, courtRatePerHour: DEFAULT_RATE_PER_HOUR, defaultAdvanceAmount: DEFAULT_ADVANCE, changeoverGraceMinutes: 3 });
   const [now, setNow] = useState(() => new Date());
   const todayISO = isoFromDate(now);
   const [selectedISO, setSelectedISO] = useState<string>(() => isoFromDate(new Date()));
@@ -205,10 +221,11 @@ export default function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [newCourtName, setNewCourtName] = useState("");
-  const [form, setForm] = useState({ name: "", phone: "", courtId: "c1", dateISO: todayISO, startTime: "19:00", durationMinutes: 60, totalAmount: DEFAULT_RATE_PER_HOUR, splitPayment: true, extraPlayers: [{ name: "", phone: "" }, { name: "", phone: "" }, { name: "", phone: "" }] as { name: string; phone: string }[] });
+  const [form, setForm] = useState({ name: "", phone: "", courtId: "c1", dateISO: todayISO, startTime: "19:00", durationMinutes: 60, totalAmount: DEFAULT_RATE_PER_HOUR, advanceAmount: DEFAULT_ADVANCE, advancePaid: false, advanceMethod: "jazzcash" as PaymentMethod, splitPayment: true, extraPlayers: [{ name: "", phone: "" }, { name: "", phone: "" }, { name: "", phone: "" }] as { name: string; phone: string }[] });
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
   const [focusedCourtId, setFocusedCourtId] = useState<string | null>(null);
   const [shareMethods, setShareMethods] = useState<Record<string, PaymentMethod>>({});
+  const [advanceMethods, setAdvanceMethods] = useState<Record<string, PaymentMethod>>({});
   const completedRef = useRef<Set<string>>(new Set());
   const noShowRef = useRef<Set<string>>(new Set());
   const startedRef = useRef<Set<string>>(new Set());
@@ -434,13 +451,24 @@ export default function Dashboard() {
       if (b.status === "booked" && bookingStart(b) <= now && bookingStart(b).getTime() + b.durationMinutes * 60_000 > now.getTime())
         alerts.push({ id: `noshow-${b.id}`, severity: "alert", bookingId: b.id, text: `${b.customerName} has not checked in (${formatMinutesOfDay(b.startMinutes)} booking) — release the slot if they're a no-show.` });
       const pay = paymentSummary(b);
-      if ((b.status === "booked" || b.status === "checked_in") && pay.outstanding > 0) {
+      const startsSoon = bookingStart(b).getTime() - now.getTime() <= 3 * 60 * 60_000 && bookingStart(b).getTime() + b.durationMinutes * 60_000 > now.getTime();
+      // Advance not in yet → the slot is not secured. Nag near the booking,
+      // or once the group is already on court without having paid it.
+      if (pay.advanceDue > 0 && (b.status === "checked_in" || (b.status === "booked" && startsSoon)))
+        alerts.push({ id: `advance-${b.id}`, severity: "alert", bookingId: b.id, text: b.status === "checked_in"
+          ? `${b.customerName} checked in without paying the ${fmtRs(pay.advanceDue)} advance — collect it at the counter now.`
+          : `Advance ${fmtRs(pay.advanceDue)} not received for ${b.customerName}'s booking at ${formatMinutesOfDay(b.startMinutes)} — the slot isn't secured until it lands. Send the advance request from Payments.` });
+      if ((b.status === "booked" || b.status === "checked_in") && pay.sharesOutstanding > 0) {
         const unpaidNames = b.shares.filter((s) => !s.paid).map((s) => s.name).join(", ");
         if (b.status === "checked_in")
-          alerts.push({ id: `unpaid-live-${b.id}`, severity: "alert", bookingId: b.id, text: `${fmtRs(pay.outstanding)} still unpaid on ${b.customerName}'s live session — ${unpaidNames} ${b.shares.filter((s) => !s.paid).length === 1 ? "has" : "have"} not paid. Collect at the counter or send a WhatsApp reminder from Payments.` });
-        else if (bookingStart(b).getTime() - now.getTime() <= 3 * 60 * 60_000 && bookingStart(b).getTime() + b.durationMinutes * 60_000 > now.getTime())
-          alerts.push({ id: `unpaid-${b.id}`, severity: "alert", bookingId: b.id, text: `${fmtRs(pay.outstanding)} unpaid for ${b.customerName}'s booking at ${formatMinutesOfDay(b.startMinutes)} — unpaid: ${unpaidNames}. Send reminders from Payments.` });
+          alerts.push({ id: `unpaid-live-${b.id}`, severity: "alert", bookingId: b.id, text: `${fmtRs(pay.sharesOutstanding)} of the balance still unpaid on ${b.customerName}'s live session — ${unpaidNames} ${b.shares.filter((s) => !s.paid).length === 1 ? "has" : "have"} not paid. The balance is collected after the match — or at the counter now, if they offer.` });
+        else if (startsSoon)
+          alerts.push({ id: `unpaid-${b.id}`, severity: "alert", bookingId: b.id, text: `${fmtRs(pay.sharesOutstanding)} of the balance unpaid for ${b.customerName}'s booking at ${formatMinutesOfDay(b.startMinutes)} — unpaid: ${unpaidNames}. Send reminders from Payments.` });
       }
+      // Session over with money still open — this is the moment balances get
+      // forgotten, so it gets its own standing alert until it's settled.
+      if (b.status === "completed" && pay.outstanding > 0)
+        alerts.push({ id: `balance-${b.id}`, severity: "alert", bookingId: b.id, text: `Balance ${fmtRs(pay.outstanding)} still due from ${b.customerName}'s group (${courts.find((c) => c.id === b.courtId)?.name}) — their session has ended. The organizer is responsible for the balance; collect it before it slips.` });
     }
     for (const c of courts)
       if (lightsOnFor(c, now) && !activeForCourt(c.id) && !c.manualOverride && !changeoverForCourt(c.id, now))
@@ -455,6 +483,7 @@ export default function Dashboard() {
       courtId: courtId ?? f.courtId,
       dateISO: dateISO ?? selectedISO,
       startTime: startMinutes !== undefined ? minutesToTimeString(startMinutes) : f.startTime,
+      advanceAmount: Math.min(settings.defaultAdvanceAmount, Math.round(f.totalAmount) || settings.defaultAdvanceAmount),
     }));
     setShowForm(true);
   }
@@ -473,11 +502,15 @@ export default function Dashboard() {
     const extras = form.extraPlayers.filter((p) => p.name.trim());
     if (form.splitPayment && extras.some((p) => !p.phone.trim())) { setNotice("Every split player needs a WhatsApp number, so payment requests can be sent."); return; }
     const players = [{ name: form.name.trim(), phone: form.phone.trim() }, ...(form.splitPayment ? extras.map((p) => ({ name: p.name.trim(), phone: p.phone.trim() })) : [])];
-    const shares = equalShares(totalAmount, players, 0);
-    patchBookings(form.dateISO, (b) => [...b, { id: uid(), courtId: form.courtId, customerName: form.name.trim(), customerPhone: form.phone.trim(), dateISO: form.dateISO, startMinutes, durationMinutes, status: "booked", checkedInAt: null, lightsOffAt: null, compMinutes: 0, totalAmount, splitPayment: form.splitPayment && players.length > 1, shares }]);
+    // Advance: one organizer payment at booking time; shares split only the balance.
+    const advanceAmount = Math.max(0, Math.min(Math.round(form.advanceAmount) || 0, totalAmount));
+    const balance = totalAmount - advanceAmount;
+    const shares = equalShares(balance, players, 0);
+    patchBookings(form.dateISO, (b) => [...b, { id: uid(), courtId: form.courtId, customerName: form.name.trim(), customerPhone: form.phone.trim(), dateISO: form.dateISO, startMinutes, durationMinutes, status: "booked", checkedInAt: null, lightsOffAt: null, compMinutes: 0, totalAmount, advanceAmount, advancePaid: advanceAmount > 0 && form.advancePaid, advanceMethod: advanceAmount > 0 && form.advancePaid ? form.advanceMethod : null, splitPayment: form.splitPayment && players.length > 1, shares }]);
+    const advanceNote = advanceAmount > 0 ? ` Advance ${fmtRs(advanceAmount)} ${form.advancePaid ? `received via ${form.advanceMethod}` : "still to collect — the slot is secured once it lands"}.` : "";
     setNotice(form.splitPayment && players.length > 1
-      ? `Booking created for ${form.name} — ${fmtRs(totalAmount)} split ${players.length} ways (${fmtRs(Math.floor(totalAmount / players.length))} each). Payment requests ready in the booking's Payments panel.`
-      : `Booking created for ${form.name} — ${formatMinutesOfDay(startMinutes)}–${formatMinutesOfDay(startMinutes + durationMinutes)} (${formatDuration(durationMinutes)}), fee ${fmtRs(totalAmount)}.`);
+      ? `Booking created for ${form.name} — balance ${fmtRs(balance)} split ${players.length} ways (${fmtRs(Math.floor(balance / players.length))} each), payable after the match.${advanceNote} Payment requests ready in the booking's Payments panel.`
+      : `Booking created for ${form.name} — ${formatMinutesOfDay(startMinutes)}–${formatMinutesOfDay(startMinutes + durationMinutes)} (${formatDuration(durationMinutes)}), fee ${fmtRs(totalAmount)}.${advanceNote}`);
     setShowForm(false); setForm((f) => ({ ...f, name: "", phone: "", extraPlayers: [{ name: "", phone: "" }, { name: "", phone: "" }, { name: "", phone: "" }] }));
   }
 
@@ -515,8 +548,9 @@ export default function Dashboard() {
     patchBookings(b.dateISO, (prev) => prev.map((x) => {
       if (x.id !== b.id) return x;
       const newTotal = x.totalAmount + extraFee;
-      // Re-split the new total equally, keeping who has already paid (and how) intact.
-      const redistributed = equalShares(newTotal, x.shares.map((s) => ({ name: s.name, phone: s.phone })), 0);
+      // Re-split the new BALANCE (total minus the advance) equally, keeping
+      // who has already paid (and how) intact.
+      const redistributed = equalShares(Math.max(0, newTotal - x.advanceAmount), x.shares.map((s) => ({ name: s.name, phone: s.phone })), 0);
       const shares = x.shares.map((s, i) => ({ ...s, amountDue: redistributed[i].amountDue }));
       return { ...x, durationMinutes: x.durationMinutes + extraMinutes, lightsOffAt: off, totalAmount: newTotal, shares };
     }));
@@ -564,6 +598,17 @@ export default function Dashboard() {
       : `${share.name} paid ${fmtRs(share.amountDue)} via ${method}. ${sum.fullyPaid ? "Booking is now paid in full." : `${fmtRs(sum.outstanding)} still outstanding on this booking.`}`);
   }
 
+  function handleToggleAdvancePaid(b: Booking) {
+    const method = advanceMethods[b.id] ?? "cash";
+    patchBookings(b.dateISO, (prev) => prev.map((x) => (x.id === b.id
+      ? { ...x, advancePaid: !x.advancePaid, advanceMethod: !x.advancePaid ? method : null }
+      : x)));
+    const sum = paymentSummary({ ...b, advancePaid: !b.advancePaid });
+    setNotice(b.advancePaid
+      ? `${b.customerName}'s advance (${fmtRs(b.advanceAmount)}) marked not received again — the slot is no longer secured.`
+      : `Advance ${fmtRs(b.advanceAmount)} received from ${b.customerName} via ${method} — slot secured. Balance after the match: ${fmtRs(sum.outstanding)}.`);
+  }
+
   function handleToggleLights(court: Court) {
     const nextOn = !lightsOnFor(court, new Date());
     patchCourts((cs) => cs.map((c) => (c.id === court.id ? { ...c, manualOverride: true, manualLightsOn: nextOn } : c)));
@@ -586,7 +631,7 @@ export default function Dashboard() {
   function handleReset() {
     completedRef.current.clear(); noShowRef.current.clear(); startedRef.current.clear(); changeoverRef.current.clear();
     setDays(seedAll());
-    setSettings({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23, courtRatePerHour: DEFAULT_RATE_PER_HOUR, changeoverGraceMinutes: 3 });
+    setSettings({ lightingPowerKw: 2, electricityPricePerUnit: 50, noShowWaitMinutes: 15, openingHour: 10, closingHour: 23, courtRatePerHour: DEFAULT_RATE_PER_HOUR, defaultAdvanceAmount: DEFAULT_ADVANCE, changeoverGraceMinutes: 3 });
     setSelectedISO(isoFromDate(new Date()));
     setConfirmReset(false);
     setNotice("Demo data reset.");
@@ -1014,7 +1059,11 @@ export default function Dashboard() {
                 <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${chip.cls}`}>{chip.text}</span>
                 {b.status !== "cancelled" && (
                   <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${pay.fullyPaid ? "bg-emerald-500/20 text-emerald-600" : pay.collected > 0 ? "bg-pb-amber/25" : "bg-red-500/15 text-red-500"}`}>
-                    {pay.fullyPaid ? `Paid in full · ${fmtRs(b.totalAmount)}` : b.splitPayment ? `Split · ${pay.paidCount}/${pay.shareCount} paid · ${fmtRs(pay.outstanding)} left` : `Unpaid · ${fmtRs(b.totalAmount)}`}
+                    {pay.fullyPaid ? `Paid in full · ${fmtRs(b.totalAmount)}` : [
+                      ...(b.advanceAmount > 0 ? [b.advancePaid ? "Advance paid" : "Advance due"] : []),
+                      ...(b.splitPayment ? [`Split ${pay.paidCount}/${pay.shareCount} paid`] : []),
+                      ...(pay.collected === 0 && b.advanceAmount === 0 && !b.splitPayment ? [`Unpaid · ${fmtRs(b.totalAmount)}`] : [`${fmtRs(pay.outstanding)} left`]),
+                    ].join(" · ")}
                   </span>
                 )}
                 {timeUp ? <span className="text-xs text-pb-dim">Time&apos;s up — lights went off at {b.lightsOffAt!.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span> : null}
@@ -1045,9 +1094,34 @@ export default function Dashboard() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-extrabold uppercase tracking-wide text-xs">{b.splitPayment ? "Split payment" : "Payment"} — {courtName}</span>
                     <span className="text-xs text-pb-dim">Total {fmtRs(b.totalAmount)} · Collected {fmtRs(pay.collected)} · Outstanding {fmtRs(pay.outstanding)}</span>
-                    <span className="ml-auto text-xs text-pb-dim">Prototype: players pay the club&apos;s JazzCash/Easypaisa or cash, staff mark each share paid. Automatic in-app payment is a later phase.</span>
+                    <span className="ml-auto text-xs text-pb-dim">Advance is taken at booking; the balance is collected after the match. Staff mark each payment as it lands (cash / JazzCash / Easypaisa / card).</span>
                   </div>
                   <div className="mt-2 divide-y divide-pb-border">
+                    {b.advanceAmount > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 py-2">
+                        <span className="font-semibold">Advance — {b.customerName} (organizer)</span>
+                        <span className="text-pb-dim">{b.customerPhone}</span>
+                        <span className="font-mono font-semibold">{fmtRs(b.advanceAmount)}</span>
+                        {b.advancePaid
+                          ? <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-bold text-emerald-600">Received{b.advanceMethod ? ` · ${b.advanceMethod}` : ""}</span>
+                          : <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-bold text-red-500">Not received — slot not secured</span>}
+                        <span className="ml-auto flex flex-wrap items-center gap-2">
+                          {!b.advancePaid && (
+                            <>
+                              <select value={advanceMethods[b.id] ?? "cash"} onChange={(e) => setAdvanceMethods((m) => ({ ...m, [b.id]: e.target.value as PaymentMethod }))} className="rounded-[10px] border border-pb-border bg-pb-surface px-2 py-1 text-xs">
+                                <option value="cash">Cash</option>
+                                <option value="jazzcash">JazzCash</option>
+                                <option value="easypaisa">Easypaisa</option>
+                                <option value="card">Card</option>
+                              </select>
+                              <a href={whatsappAdvanceLink(b, courtName)} target="_blank" rel="noreferrer" className={btnCls}>WhatsApp advance request</a>
+                            </>
+                          )}
+                          <button onClick={() => handleToggleAdvancePaid(b)} className={b.advancePaid ? btnCls : "rounded-full bg-pb-accent px-3 py-1 text-xs font-bold text-white"}>{b.advancePaid ? "Undo received" : "Mark received"}</button>
+                        </span>
+                      </div>
+                    )}
+                    {b.advanceAmount > 0 && <p className="py-1.5 text-xs font-semibold text-pb-dim">Balance after the match — {fmtRs(Math.max(0, b.totalAmount - b.advanceAmount))}{b.splitPayment ? ", split between the players:" : " — the organizer settles it:"}</p>}
                     {b.shares.map((sh) => (
                       <div key={sh.id} className="flex flex-wrap items-center gap-2 py-2">
                         <span className="font-semibold">{sh.name}</span>
@@ -1241,11 +1315,14 @@ export default function Dashboard() {
                 <input type="number" min={0} value={settings.noShowWaitMinutes} onChange={(e) => setSettings({ ...settings, noShowWaitMinutes: Number(e.target.value) })} className={inputCls} /></label>
               <label className="block text-sm">Court fee (Rs / hour)
                 <input type="number" min={0} step={100} value={settings.courtRatePerHour} onChange={(e) => setSettings({ ...settings, courtRatePerHour: Number(e.target.value) })} className={inputCls} /></label>
+              <label className="block text-sm">Default advance (Rs / booking)
+                <input type="number" min={0} step={100} value={settings.defaultAdvanceAmount} onChange={(e) => setSettings({ ...settings, defaultAdvanceAmount: Number(e.target.value) })} className={inputCls} /></label>
               <label className="block text-sm">Changeover grace (minutes)
                 <input type="number" min={0} value={settings.changeoverGraceMinutes} onChange={(e) => setSettings({ ...settings, changeoverGraceMinutes: Number(e.target.value) })} className={inputCls} /></label>
             </div>
             <p className="mt-2 text-xs text-pb-dim">Cost of 1 hour of lights = {settings.lightingPowerKw} kW × Rs {settings.electricityPricePerUnit} = Rs {settings.lightingPowerKw * settings.electricityPricePerUnit}</p>
             <p className="mt-1 text-xs text-pb-dim">Changeover grace: with back-to-back bookings on a court, the lights hold on this many minutes past a session&apos;s end waiting for the next team (the session itself still ends on time). 0 turns the grace off — lights go off the moment a session ends.</p>
+            <p className="mt-1 text-xs text-pb-dim">Advance: the part paid at booking time to secure the slot (Rs 1,000 is the usual figure). The rest — the balance — is collected after the match; per-player shares split only the balance. Set 0 if the club takes no advance.</p>
             <div className="mt-4 flex gap-2">
               <input placeholder="New court name" value={newCourtName} onChange={(e) => setNewCourtName(e.target.value)} className={inputCls} />
               <button onClick={handleAddCourt} className={btnCls}>Add court</button>
@@ -1293,6 +1370,24 @@ export default function Dashboard() {
                 <input type="number" required min={0} step={50} value={form.totalAmount} onChange={(e) => setForm({ ...form, totalAmount: Number(e.target.value) })} className={inputCls} />
               </label>
               <p className="self-end pb-2 text-xs text-pb-dim">Auto from {fmtRs(settings.courtRatePerHour)}/hour × duration — edit the total if this booking has a different price.</p>
+              <label className="text-xs font-semibold text-pb-dim">Advance (Rs)
+                <input type="number" min={0} step={100} value={form.advanceAmount} onChange={(e) => setForm({ ...form, advanceAmount: Number(e.target.value) })} className={inputCls} />
+              </label>
+              <div className="self-end pb-1">
+                <label className="flex items-center gap-2 text-sm font-semibold">
+                  <input type="checkbox" checked={form.advancePaid} disabled={!(form.advanceAmount > 0)} onChange={(e) => setForm({ ...form, advancePaid: e.target.checked })} className="h-4 w-4" />
+                  Advance received
+                </label>
+                {form.advancePaid && form.advanceAmount > 0 && (
+                  <select value={form.advanceMethod} onChange={(e) => setForm({ ...form, advanceMethod: e.target.value as PaymentMethod })} className="mt-1.5 rounded-[10px] border border-pb-border bg-pb-surface px-2 py-1 text-xs">
+                    <option value="cash">Cash</option>
+                    <option value="jazzcash">JazzCash</option>
+                    <option value="easypaisa">Easypaisa</option>
+                    <option value="card">Card</option>
+                  </select>
+                )}
+                <p className="mt-1 text-xs text-pb-dim">Paid by the organizer to secure the slot; the balance is collected after the match. 0 = no advance for this booking.</p>
+              </div>
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {DURATION_CHIPS.map((m) => <button type="button" key={m} onClick={() => setForm((f) => { const prevAuto = Math.round((settings.courtRatePerHour * Math.floor(f.durationMinutes)) / 60); return { ...f, durationMinutes: m, totalAmount: f.totalAmount === prevAuto ? Math.round((settings.courtRatePerHour * m) / 60) : f.totalAmount }; })} className={chipCls}>{formatDuration(m)}</button>)}
@@ -1306,7 +1401,7 @@ export default function Dashboard() {
                 <input type="checkbox" checked={form.splitPayment} onChange={(e) => setForm({ ...form, splitPayment: e.target.checked })} className="h-4 w-4" />
                 Split payment between players
               </label>
-              <p className="mt-1 text-xs text-pb-dim">Each player gets their own share and a WhatsApp payment request — nobody has to chase the captain, and the club chases nobody. The customer above is Player 1.</p>
+              <p className="mt-1 text-xs text-pb-dim">Each player gets their own share of the balance (after the advance) and a WhatsApp payment request — nobody has to chase the captain, and the club chases nobody. The customer above is Player 1 and pays the advance.</p>
               {form.splitPayment && (
                 <div className="mt-2 space-y-2">
                   {form.extraPlayers.map((p, i) => (
@@ -1319,7 +1414,7 @@ export default function Dashboard() {
                     {form.extraPlayers.length < 7 && <button type="button" onClick={() => setForm((f) => ({ ...f, extraPlayers: [...f.extraPlayers, { name: "", phone: "" }] }))} className={btnCls}>+ Add player</button>}
                     {form.extraPlayers.length > 1 && <button type="button" onClick={() => setForm((f) => ({ ...f, extraPlayers: f.extraPlayers.slice(0, -1) }))} className={btnCls}>Remove last</button>}
                     <span className="text-xs font-semibold text-pb-dim">
-                      {(() => { const n = 1 + form.extraPlayers.filter((p) => p.name.trim()).length; return `${fmtRs(form.totalAmount || 0)} ÷ ${n} player${n === 1 ? "" : "s"} = ${fmtRs(Math.floor((form.totalAmount || 0) / n))} each`; })()}
+                      {(() => { const n = 1 + form.extraPlayers.filter((p) => p.name.trim()).length; const bal = Math.max(0, (form.totalAmount || 0) - Math.min(form.advanceAmount || 0, form.totalAmount || 0)); return form.advanceAmount > 0 ? `Balance ${fmtRs(bal)} ÷ ${n} player${n === 1 ? "" : "s"} = ${fmtRs(Math.floor(bal / n))} each, after the ${fmtRs(Math.min(form.advanceAmount, form.totalAmount || 0))} advance` : `${fmtRs(form.totalAmount || 0)} ÷ ${n} player${n === 1 ? "" : "s"} = ${fmtRs(Math.floor((form.totalAmount || 0) / n))} each`; })()}
                     </span>
                   </div>
                 </div>

@@ -17,6 +17,7 @@ create table if not exists public.clubs (
   changeover_grace_minutes int not null default 3,
   check_in_early_minutes int not null default 15,
   court_rate_per_hour numeric not null default 4800,
+  default_advance_amount int not null default 1000,
   opening_hour int not null default 10,
   closing_hour int not null default 23,
   created_at timestamptz not null default now()
@@ -51,6 +52,13 @@ create table if not exists public.bookings (
   status text not null default 'booked'
     check (status in ('booked','checked_in','completed','cancelled','no_show')),
   total_amount numeric not null default 0,
+  -- Advance + balance (Pakistan custom: part advance at booking, balance
+  -- after the match). The advance is one organizer payment; booking_shares
+  -- split only the balance (total_amount - advance_amount).
+  advance_amount numeric not null default 0,
+  advance_paid boolean not null default false,
+  advance_method text check (advance_method in ('cash','jazzcash','easypaisa','card')),
+  advance_paid_at timestamptz,
   split_payment boolean not null default false,
   checked_in_at timestamptz,
   -- Set at check-in to the session end: (booking_date + start_time) +
@@ -69,7 +77,8 @@ create table if not exists public.bookings (
 );
 
 -- Split payment: one row per player share of a booking's court fee.
--- Shares of a booking sum to bookings.total_amount. Stage 1 (prototype):
+-- Shares of a booking sum to bookings.total_amount - bookings.advance_amount
+-- (the advance is a single organizer payment, not a share). Stage 1 (prototype):
 -- staff mark a share paid when money lands on the club's own JazzCash /
 -- Easypaisa / cash; Stage 2 replaces the manual mark with gateway webhooks.
 create table if not exists public.booking_shares (

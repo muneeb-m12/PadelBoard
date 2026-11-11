@@ -15,7 +15,7 @@ export interface BookingShare {
   id: string;
   name: string;
   phone: string;
-  /** rupees owed by this player; all shares of a booking sum to its totalAmount */
+  /** rupees owed by this player; all shares of a booking sum to its balance (totalAmount − advanceAmount) */
   amountDue: number;
   paid: boolean;
   method: PaymentMethod | null;
@@ -41,9 +41,17 @@ export interface Booking {
   lightsOffAt: Date | null;
   /** total court fee in rupees for this booking */
   totalAmount: number;
+  /** Advance taken at booking time to secure the slot (Pakistan custom: part
+   *  advance, balance after the match — nobody pays the full fee upfront).
+   *  Paid by the organizer as ONE payment; the per-player shares below split
+   *  only the BALANCE (totalAmount − advanceAmount). 0 = no advance. */
+  advanceAmount: number;
+  advancePaid: boolean;
+  advanceMethod: PaymentMethod | null;
   /** true when the fee is split between players; false = organizer pays alone */
   splitPayment: boolean;
-  /** per-player shares; a non-split booking has exactly one share (the organizer) */
+  /** per-player shares of the balance after the advance; a non-split booking
+   *  has exactly one share (the organizer). Shares sum to totalAmount − advanceAmount. */
   shares: BookingShare[];
 }
 
@@ -69,6 +77,9 @@ export interface ClubSettings {
   closingHour: number;
   /** default court fee per hour in rupees — a booking's total is rate × duration unless overridden in the form */
   courtRatePerHour: number;
+  /** default advance (rupees, flat per booking) taken to secure a slot —
+   *  Rs 1,000 is the usual figure in Pakistan; editable per booking, 0 = none */
+  defaultAdvanceAmount: number;
   /** Changeover grace (minutes): with a consecutive booking on the same court
    *  (starting at the session end or within this window after it), the lights
    *  hold on up to this many minutes past the end waiting for the next team.
