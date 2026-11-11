@@ -182,6 +182,15 @@ function ProgressRing({ fraction, label, tone }: { fraction: number | null; labe
 }
 
 export default function Dashboard() {
+  // Hydration guard: the demo seeds its bookings from `new Date()` and ticks
+  // every second, so the server render and the browser's first render can
+  // never agree (collected totals, countdown rings). Render a static
+  // fallback until mounted, then render the live dashboard client-side only.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time mount flag; the first render must match the server HTML exactly
+    setMounted(true);
+  }, []);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [bookingsView, setBookingsView] = useState<"grid" | "list">("grid");
   const [gridFilter, setGridFilter] = useState<"all" | "live" | "booked" | "completed" | "no_show">("all");
@@ -807,6 +816,14 @@ export default function Dashboard() {
     setBookingsView("list");
     setTimeout(() => scrollToId(`booking-row-${b.id}`), 60);
   };
+
+  if (!mounted) {
+    return (
+      <main className="mx-auto w-full max-w-6xl px-4 py-6">
+        <p>Loading PadelBoard…</p>
+      </main>
+    );
+  }
 
   return (
     <div className="flex w-full text-pb-text">
